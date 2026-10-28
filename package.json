@@ -1,0 +1,21 @@
+{
+  "name": "bbsinfo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node backend/server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "busboy": "1.6.0",
+    "entities": "7.0.0",
+    "jodit": "4.18.10",
+    "mariadb": "3.5.4",
+    "openid-client": "6.8.8",
+    "sanitize-html": "2.18.1"
+  }
+}

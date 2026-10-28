@@ -1,0 +1,59 @@
+[Unit]
+Description=BBS Info Kollegiums-CMS
+After=network-online.target mariadb.service
+Wants=network-online.target
+Requires=mariadb.service
+
+[Service]
+Type=simple
+User=bbsinfo
+Group=www-data
+WorkingDirectory=/opt/bbsinfo/current
+ExecStart=/usr/local/bin/node /opt/bbsinfo/current/backend/server.mjs
+LoadCredential=config:/etc/bbsinfo/config.json
+LoadCredential=mail:/etc/bbsinfo/mail.json
+LoadCredential=idm-credentials:/etc/bbsinfo/idm-credentials.json
+Environment=NODE_ENV=production
+Environment=BBSINFO_SOCKET=/run/bbsinfo/backend.sock
+Environment=BBSINFO_ARCHIVE_ROOT=/var/lib/bbsinfo/archive
+Environment=BBSINFO_SUBMISSION_ROOT=/var/lib/bbsinfo/submissions
+Environment=BBSINFO_EDITOR_IMAGE_ROOT=/var/lib/bbsinfo/editor-images
+Environment=BBSINFO_MAIL_CONFIG=%d/mail
+RuntimeDirectory=bbsinfo
+RuntimeDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/bbsinfo /run/bbsinfo
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+MemoryMax=512M
+MemorySwapMax=0
+TasksMax=64
+LimitNOFILE=2048
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

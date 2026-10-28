@@ -1,0 +1,14 @@
+{
+  "clientId": "ISERV-CLIENT-ID",
+  "clientSecret": "ISERV-CLIENT-SECRET",
+  "auditOwnerUuid": "00000000-0000-4000-8000-000000000000",
+  "readerGroupName": "Kollegium",
+  "editorUuids": [],
+  "editorAccounts": [],
+  "editorRoleUuids": [],
+  "database": {
+    "socketPath": "/run/mysqld/mysqld.sock",
+    "database": "bbsinfo",
+    "user": "bbsinfo"
+  }
+}
