@@ -467,6 +467,7 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     assert.match(landing, /landing-title/);
     assert.match(landing, /Info Mappe/);
     assert.match(landing, /<footer><span>BBS Einbeck · BBS Info/);
+    assert.match(landing, /<nav class="footer-links" aria-label="Projektlinks"><a href="https:\/\/github\.com\/mail896\/bbsinfo" target="_blank" rel="noopener noreferrer">GitHub ↗<\/a><a href="https:\/\/mail896\.github\.io\/bbsinfo\/" target="_blank" rel="noopener noreferrer">Pages ↗<\/a><\/nav>/);
     assert.match(landing, /Animation der Mappe erneut abspielen/);
     assert.doesNotMatch(landing, /landing-replay/);
     assert.match(landing, /assets\/landing\.js/);

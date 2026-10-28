@@ -1782,15 +1782,28 @@ footer {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.6;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 footer a {
   color: inherit;
 }
 
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 16px;
+}
+
 @media(max-width:760px) {
   footer {
     padding: 0 16px 24px;
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
