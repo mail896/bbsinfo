@@ -246,8 +246,11 @@ async function transaction(pool, work, auditGapMarker = null, auditRequired = fa
 
 async function reserveIssueNumber(conn) {
   const seq = await conn.query('SELECT next_number AS nextNumber FROM issue_sequence WHERE id = 1 FOR UPDATE');
-  let number = Number(seq[0]?.nextNumber);
-  if (!Number.isSafeInteger(number) || number < 93 || number >= 65535) throw new Error('Ausgabennummerierung nicht verfügbar.');
+  const nextNumber = Number(seq[0]?.nextNumber);
+  if (!Number.isSafeInteger(nextNumber) || nextNumber < 93 || nextNumber > 65535) throw new Error('Ausgabennummerierung nicht verfügbar.');
+  // The sequence can be stale after an older deletion. The locked row still serializes
+  // allocations, while scanning from 93 reuses the first genuinely free number.
+  let number = 93;
   const occupied = await conn.query('SELECT number FROM issues WHERE number >= ? ORDER BY number', [number]);
   for (const row of occupied) {
     if (Number(row.number) !== number) break;

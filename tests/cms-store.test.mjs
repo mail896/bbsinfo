@@ -16,6 +16,7 @@ test('Neue Beiträge und Ausgaben speichern ihren Titel beim Anlegen und Veröff
       if (sql.startsWith('SELECT status, title FROM updates')) return [{ status: 'draft', title: 'Beitrag bei Veröffentlichung' }];
       if (sql.startsWith('SELECT status, title FROM issues')) return [{ status: 'draft', title: 'Ausgabe bei Veröffentlichung' }];
       if (sql.startsWith('SELECT next_number AS nextNumber')) return [{ nextNumber: nextIssue++ }];
+      if (sql.startsWith('SELECT number FROM issues')) return nextIssue === 95 ? [{ number: 93 }] : [{ number: 93 }, { number: 94 }];
       if (sql.startsWith('SELECT')) return [];
       return { affectedRows: 1 };
     },
@@ -34,6 +35,23 @@ test('Neue Beiträge und Ausgaben speichern ihren Titel beim Anlegen und Veröff
     ['issue.publish', '94', 'Ausgabe bei Veröffentlichung'],
     ['issue.publish', '95', 'Direkt veröffentlichte Ausgabe'],
   ]);
+});
+
+test('Eine freie 93 wird auch bei alter Sequenz 96 vor belegten 94 und 95 vergeben', async () => {
+  const statements = [];
+  const connection = {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql, params) {
+      statements.push({ sql, params });
+      if (sql.startsWith('SELECT next_number AS nextNumber')) return [{ nextNumber: 96 }];
+      if (sql.startsWith('SELECT number FROM issues')) return [{ number: 94 }, { number: 95 }];
+      if (sql.startsWith('INSERT INTO issues')) return { insertId: 12 };
+      return { affectedRows: 1 };
+    },
+  };
+  const store = createCmsStore({ async getConnection() { return connection; } });
+  assert.equal(await store.createAndPublishIssue(actor, 'Neue Ausgabe', 'Inhalt', '2026/27', '', []), 93);
+  assert.ok(statements.some(({ sql, params }) => sql.startsWith('UPDATE issue_sequence SET next_number') && params[0] === 94));
 });
 
 test('Steckbrief-Löschen sperrt die Zeile und entfernt nur eigene offene Einreichungen', async () => {
@@ -168,7 +186,7 @@ test('Bereits in einer Ausgabe verwendeter Kollegenbeitrag darf erneut übernomm
     async query(sql, params) {
       statements.push({ sql, params });
       if (sql.startsWith('SELECT next_number AS nextNumber')) return [{ nextNumber: 94 }];
-      if (sql.startsWith('SELECT number FROM issues')) return [];
+      if (sql.startsWith('SELECT number FROM issues')) return [{ number: 93 }];
       if (sql.startsWith('INSERT INTO issues')) return { insertId: 9 };
       if (sql.startsWith('SELECT c.id, c.title')) return [{ id: 5, title: 'Schulveranstaltung', body: 'Bericht', bodyHtml: null, status: 'taken_over', author: 'Lea Test', usedBefore: 1 }];
       return { affectedRows: 1 };
