@@ -50,11 +50,13 @@ const shots = [
   ['ausgaben-bearbeiten', web.issueEditorPage([], choices([update, secondUpdate]), [issue], choices([submission]), [], csrf, '2026/27', {}, choices([contribution]))],
   ['ausgabe-korrigieren', web.issueEditPage(issue, choices([update, secondUpdate]), choices([submission]), [], csrf, null, choices([contribution]))],
   ['mailvorschau', web.issueMailPage(issue, mailConfig, csrf, settings)],
+  ['update-mailvorschau', web.digestTestPage([update, secondUpdate], mailConfig, csrf)],
   ['einstellungen-ausgaben', web.settingsPage(settings, csrf, 'issues', [], true, [])],
   ['einstellungen-updates', web.settingsPage(settings, csrf, 'updates', [], true, [])],
   ['einstellungen-textbausteine', web.settingsPage(settings, csrf, 'templates', [{ id: 1, name: 'Personalrat', bodyHtml: '<p>Der Personalrat informiert.</p>', enabled: true }], true, [])],
   ['einstellungen-redaktion', web.settingsPage(settings, csrf, 'editors', [], true, [{ name: 'Pat Beispiel', email: 'pat@school.example', userUuid: '00000000-0000-4000-8000-000000000001' }])],
   ['historisches-archiv', web.archivePage(archive, '', '2025/26')],
+  ['archiv-suche', web.archivePage(archive, 'Projektwoche', '2025/26')],
   ['audit-log', web.auditPage({ events, page: 1, pageCount: 1, through: '3' })],
   ['nutzungsstatistik', web.statsPage(stats)],
 ];
