@@ -5,4 +5,3 @@ Please do not post vulnerabilities, credentials or personal information in publi
 Bitte Sicherheitslücken, Zugangsdaten und personenbezogene Daten nicht in öffentlichen Issues veröffentlichen. Ein öffentliches Issue darf nur um einen privaten Kontaktweg bitten, ohne technische Details oder personenbezogene Daten. Bitte keine echten Schüler- oder Personaldaten beifügen.
 
 The public demo contains fictional data only. The protected production instance is separate from GitHub Pages.
-

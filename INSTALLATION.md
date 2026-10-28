@@ -27,4 +27,3 @@ Mail ist optional. Die SMTP-Konfiguration liegt in einer privaten JSON-Datei und
 ## Prüfung vor Betrieb
 
 `npm test` ausführen, Start ohne und mit Konfiguration prüfen, anonymen Zugriff auf Archiv/PDF/Redaktion mit HTTP 401 bestätigen, IServ-Login und Rollen mit eigenen Testkonten prüfen, eine sichere Mailvorschau ansehen sowie Backup und Rücksicherung testen. Die GitHub Pages sind nur statische Produktdokumentation und betreiben keine Webapp.
-

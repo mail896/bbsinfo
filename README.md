@@ -48,4 +48,3 @@ Das Repository enthält Beispielkonfiguration, Schema, Migrationen und Tests. Re
 Secrets, private IServ-Daten, reale Inhalte, Serverbackups und die interne Entwicklungshistorie sind **nicht** Teil dieses öffentlichen Repositorys. Der öffentliche Stand hat eine eigene Git-Historie. Auch bei einer eigenen Installation darf die Mail an einen Gesamtverteiler erst nach expliziter Freigabe beider vorhandenen Sperren aktiviert werden.
 
 [Sicherheitsmeldungen](SECURITY.md) · [MIT-Lizenz](LICENSE)
-

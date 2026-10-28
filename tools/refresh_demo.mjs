@@ -60,7 +60,9 @@ const shots = [
 ];
 
 await mkdir(output, { recursive: true });
-const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-headless-shell', args: ['--no-sandbox'] });
+const launchOptions = { headless: true, args: ['--no-sandbox'] };
+if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
+const browser = await playwright.chromium.launch(launchOptions);
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
 const assetRoot = path.join(root, 'design', 'web');
 await context.route('http://demo.local/**', async (route) => {

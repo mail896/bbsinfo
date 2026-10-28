@@ -48,4 +48,3 @@ The repository contains an example configuration, schema, migrations and tests. 
 Secrets, private IServ data, real content, backups and internal development history are **not** published. This public copy has its own Git history. A staff-wide mail recipient must remain blocked until both explicit release gates have been deliberately enabled for an installation.
 
 [Security reports](SECURITY.md) · [MIT license](LICENSE)
-

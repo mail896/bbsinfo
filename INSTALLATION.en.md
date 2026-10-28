@@ -27,4 +27,3 @@ Email is optional. Store SMTP settings in a private JSON file and pass it throug
 ## Before use
 
 Run `npm test`; verify startup and anonymous HTTP 401 responses for archive, PDFs and editor pages; test IServ sign-in and roles with local test accounts; inspect an email preview; and test backup and restore. GitHub Pages is a static project site, not an instance of the web application.
-
