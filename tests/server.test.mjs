@@ -467,7 +467,7 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     assert.match(landing, /landing-title/);
     assert.match(landing, /Info Mappe/);
     assert.match(landing, /<footer><span>BBS Einbeck · BBS Info/);
-    assert.match(landing, /<nav class="footer-links" aria-label="Projektlinks"><a href="https:\/\/github\.com\/mail896\/bbsinfo" target="_blank" rel="noopener noreferrer">GitHub ↗<\/a><a href="https:\/\/mail896\.github\.io\/bbsinfo\/" target="_blank" rel="noopener noreferrer">Pages ↗<\/a><\/nav>/);
+    assert.match(landing, /<nav class="footer-links" aria-label="Projektlinks"><a href="https:\/\/github\.com\/mail896\/bbsinfo" target="_blank" rel="noopener noreferrer"><svg[^>]+>.*?<\/svg><span>GitHub ↗<\/span><\/a><a href="https:\/\/mail896\.github\.io\/bbsinfo\/" target="_blank" rel="noopener noreferrer"><svg[^>]+>.*?<\/svg><span>Pages ↗<\/span><\/a><\/nav>/);
     assert.match(landing, /Animation der Mappe erneut abspielen/);
     assert.doesNotMatch(landing, /landing-replay/);
     assert.match(landing, /assets\/landing\.js/);
@@ -1290,6 +1290,8 @@ test('Viele Beiträge und Ausgaben bleiben über Seiten und direkte Beitragslink
     const sid = await login(fixture);
     const headers = { cookie: sid };
     const firstUpdates = await (await request(fixture.base, '/bbsinfo/updates/', { headers })).text();
+    assert.match(firstUpdates, /<details class="updates-preferences"><summary>/);
+    assert.ok(firstUpdates.indexOf('class="updates-preferences"') < firstUpdates.indexOf('id="update-17"'));
     assert.match(firstUpdates, /href="\/bbsinfo\/updates\/\?page=2"/);
     assert.doesNotMatch(firstUpdates, /<h2>Meldung 1<\/h2>/);
     const secondUpdates = await (await request(fixture.base, '/bbsinfo/updates/?page=2', { headers })).text();

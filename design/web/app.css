@@ -949,6 +949,33 @@ legend {
 .issue-source-current[hidden],.issue-source-used[hidden],.issue-source-more[hidden],.issue-source-status:empty { display: none; }
 .issue-source-status { margin: 8px 0 0; }
 
+.updates-preferences {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafb;
+}
+
+.updates-preferences[open] { width: 100%; }
+.updates-preferences summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px 12px;
+  color: #37526a;
+  font-size: .86rem;
+  cursor: pointer;
+  list-style: none;
+}
+.updates-preferences summary::-webkit-details-marker { display: none; }
+.updates-preferences summary strong { color: var(--ink); }
+.updates-preferences-action { margin-left: auto; text-decoration: underline; }
+.updates-preferences-panel { border-top: 1px solid var(--line); padding: 16px; }
+.updates-preferences-panel .meta { max-width: 75ch; }
+
 .subscription-row {
   display: flex;
   flex-wrap: wrap;
@@ -1798,6 +1825,9 @@ footer a {
   justify-content: flex-end;
   gap: 4px 16px;
 }
+
+.footer-links a { display: inline-flex; align-items: center; gap: 5px; }
+.footer-links svg { flex: 0 0 auto; }
 
 @media(max-width:760px) {
   footer {
