@@ -293,6 +293,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       if (publicAssets.has(path) && (req.method === 'GET' || req.method === 'HEAD')) {
         const asset = publicAssets.get(path);
         const image = statSync(asset.path);
+        if (path === `${base}assets/logo-mappe.png`) res.setHeader('Cache-Control', 'no-cache');
         res.writeHead(200, { 'Content-Type': asset.type, 'Content-Length': image.size });
         if (req.method === 'HEAD') return res.end();
         createReadStream(asset.path).on('error', () => res.destroy()).pipe(res);

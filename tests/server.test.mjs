@@ -474,6 +474,7 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     assert.match(start.headers.get('content-security-policy'), /img-src 'self'/);
     assert.match(start.headers.get('content-security-policy'), /style-src 'self'/);
     assert.match(start.headers.get('content-security-policy'), /script-src 'self'/);
+    assert.equal(start.headers.get('cache-control'), 'no-store');
     const stylesheet = await request(fixture.base, '/bbsinfo/assets/app.css');
     assert.equal(stylesheet.status, 200);
     assert.match(stylesheet.headers.get('content-type'), /^text\/css/);
@@ -494,6 +495,7 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     const icon = await request(fixture.base, '/bbsinfo/assets/logo-mappe.png', { method: 'HEAD' });
     assert.equal(icon.status, 200);
     assert.equal(icon.headers.get('content-type'), 'image/png');
+    assert.equal(icon.headers.get('cache-control'), 'no-cache');
     assert.ok(Number(icon.headers.get('content-length')) < 50000);
     const login = await request(fixture.base, '/bbsinfo/oidc/login');
     assert.equal(login.status, 303);
