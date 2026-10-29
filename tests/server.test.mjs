@@ -179,13 +179,13 @@ function fakeCmsStore() {
     async createSubmission(actor, title, note, storedName, mediaType, byteSize) { const id = submissions.length + 1; submissions.push({ id, ownerUuid: actor, title, note, storedName, mediaType, byteSize, status: 'submitted', createdAt: '26.10.2026 12:00' }); events.push({ actor, action: 'submission.create' }); return id; },
     async listOwnSubmissions(actor) { return submissions.filter((item) => item.ownerUuid === actor); },
     async listAllSubmissions() { return submissions.map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid) })); },
-    async listTakenOverSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid) })); },
-    async listIssueSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), usedInIssues: issues.filter((issue) => issue.attachments?.some((file) => Number(file.id) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
+    async listTakenOverSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), linked: [...drafts, ...published, ...issues].some((entry) => entry.attachments?.some((file) => file?.id === item.id)) })); },
+    async listIssueSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), linked: [...drafts, ...published, ...issues].some((entry) => entry.attachments?.some((file) => file?.id === item.id)), usedInIssues: issues.filter((issue) => issue.attachments?.some((file) => Number(file.id) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
     async getSubmission(id, trashed = false) { return (trashed ? trash.submissions : submissions).find((item) => item.id === Number(id)) || null; },
     async isPublishedSubmission(id) { return published.some((item) => item.attachments?.some((file) => file?.id === Number(id))) || issues.some((issue) => issue.attachments?.some((file) => file?.id === Number(id))); },
     async takeOverSubmission(actor, id) { const item = submissions.find((row) => row.id === Number(id) && row.status === 'submitted'); if (!item) return false; item.status = 'taken_over'; events.push({ actor, action: 'submission.take_over' }); return true; },
     async replaceSubmission(actor, id, title, note, storedName, mediaType, byteSize) { const item = submissions.find((row) => row.id === Number(id) && row.ownerUuid === actor && row.status === 'submitted'); if (!item) return null; const oldName = item.storedName; Object.assign(item, { title, note, storedName, mediaType, byteSize }); events.push({ actor, action: 'submission.replace' }); return oldName; },
-    async deleteSubmission(actor, id, editor = false) { const index = submissions.findIndex((row) => row.id === Number(id) && (editor || row.ownerUuid === actor) && row.status === 'submitted'); if (index < 0) return null; const [item] = submissions.splice(index, 1); trash.submissions.push({ ...item, deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'submission.delete', type: 'submission', id: item.id, title: item.title }); return item.storedName; },
+    async deleteSubmission(actor, id, editor = false) { const index = submissions.findIndex((row) => row.id === Number(id) && (editor || row.ownerUuid === actor) && (row.status === 'submitted' || (editor && row.status === 'taken_over')) && ![...drafts, ...published, ...issues].some((entry) => entry.attachments?.some((file) => file?.id === row.id))); if (index < 0) return null; const [item] = submissions.splice(index, 1); trash.submissions.push({ ...item, deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'submission.delete', type: 'submission', id: item.id, title: item.title }); return item.storedName; },
   };
 }
 
@@ -447,6 +447,56 @@ test('Redaktion verschiebt offene fremde Text- und Datei-Einreichungen in den Pa
   } finally {
     await Promise.all([new Promise((resolve) => owner.app.close(resolve)), new Promise((resolve) => editor.app.close(resolve)), new Promise((resolve) => stranger.app.close(resolve))]);
     rmSync(submissionRoot, { recursive: true, force: true });
+  }
+});
+
+test('Redaktion löscht übernommene Steckbriefe direkt, solange sie nicht verknüpft sind', async () => {
+  const cms = fakeCmsStore();
+  const ownerUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const root = mkdtempSync(join(tmpdir(), 'bbsinfo-adopted-delete-'));
+  const owner = await setup(null, cms, { ...validInfo, 'iserv:uuid': ownerUuid, name: 'Autorin' }, root);
+  const editor = await setup(null, cms, validInfo, root);
+  try {
+    for (const [id, title] of [[1, 'Freies Profil'], [2, 'Verknüpftes Profil']]) {
+      const storedName = `cccccccc-cccc-4ccc-8ccc-${String(id).padStart(12, '0')}`;
+      writeFileSync(join(root, storedName), `datei-${id}`);
+      await cms.createSubmission(ownerUuid, title, '', storedName, 'application/pdf', 7);
+      await cms.takeOverSubmission(uuid, id);
+    }
+    await cms.createDraft(uuid, 'Mit Steckbrief', 'Text', [2]);
+    const ownerCookie = await login(owner);
+    const ownerHtml = await (await request(owner.base, '/bbsinfo/submissions/', { headers: { cookie: ownerCookie } })).text();
+    const ownerCsrf = /name="csrf" value="([a-f0-9]{64})"/.exec(ownerHtml)[1];
+    const post = (base, cookie, csrf, id, returnTo = 'editor') => request(base, '/bbsinfo/editor/submissions/delete', {
+      method: 'POST', headers: { cookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf, id: String(id), confirm: String(id), returnTo }),
+    });
+    assert.equal((await post(owner.base, ownerCookie, ownerCsrf, 1)).status, 403);
+    const editorCookie = await login(editor);
+    const editorHtml = await (await request(editor.base, '/bbsinfo/editor/', { headers: { cookie: editorCookie } })).text();
+    const editorCsrf = /name="csrf" value="([a-f0-9]{64})"/.exec(editorHtml)[1];
+    assert.match(editorHtml, /data-source-delete="submissions" data-source-id="1"/);
+    assert.doesNotMatch(editorHtml, /data-source-delete="submissions" data-source-id="2"/);
+    const response = await post(editor.base, editorCookie, editorCsrf, 1);
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get('location'), '/bbsinfo/editor/');
+    assert.equal(await cms.getSubmission(1), null);
+    const trash = await (await request(editor.base, '/bbsinfo/editor/settings/?tab=trash', { headers: { cookie: editorCookie } })).text();
+    assert.match(trash, /Freies Profil/);
+    assert.match(trash, /Übernommen/);
+    assert.equal((await request(editor.base, '/bbsinfo/trash/submissions/1/file', { headers: { cookie: editorCookie } })).status, 200);
+    assert.equal((await request(owner.base, '/bbsinfo/trash/submissions/1/file', { headers: { cookie: ownerCookie } })).status, 403);
+    assert.equal((await post(editor.base, editorCookie, editorCsrf, 2, 'issues')).status, 409);
+    assert.ok(await cms.getSubmission(2));
+    const restored = await request(editor.base, '/bbsinfo/trash/restore', {
+      method: 'POST', headers: { cookie: editorCookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf: editorCsrf, kind: 'submission', id: '1' }),
+    });
+    assert.equal(restored.status, 303);
+    assert.equal((await cms.getSubmission(1)).status, 'taken_over');
+  } finally {
+    await Promise.all([new Promise((resolve) => owner.app.close(resolve)), new Promise((resolve) => editor.app.close(resolve))]);
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

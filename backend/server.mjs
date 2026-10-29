@@ -145,7 +145,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
     const state = legacy ? { items: legacy.slice((pageNumber - 1) * 30, pageNumber * 30), hasMore: legacy.length > pageNumber * 30, page: pageNumber } : result;
     if (!state || !Array.isArray(state.items) || state.items.length > 30 || typeof state.hasMore !== 'boolean') throw new Error('Ungültige Ausgabenquelle.');
     return {
-      items: state.items.map((item) => ({ id: Number(item.id), title: String(item.title || ''), publishedAtUtc: String(item.publishedAtUtc || ''), author: String(item.author || ''), ownerName: String(item.ownerName || ''), usedInIssues: item.usedInIssues ? String(item.usedInIssues) : null })),
+      items: state.items.map((item) => ({ id: Number(item.id), title: String(item.title || ''), publishedAtUtc: String(item.publishedAtUtc || ''), author: String(item.author || ''), ownerName: String(item.ownerName || ''), usedInIssues: item.usedInIssues ? String(item.usedInIssues) : null, linked: !!item.linked })),
       hasMore: state.hasMore,
       page: pageNumber,
     };
@@ -603,6 +603,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             const submission = await cmsStore.getSubmission((submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)[1], trashedFile);
             if (!submission) return send(404, page('Nicht gefunden', '<section><h1>Datei nicht gefunden</h1></section>'));
             if ((ownFile || trashedFile) && submission.ownerUuid !== identity.uuid && !identity.editor) return denyProtectedAccess(identity, 'submissions');
+            if (trashedFile && submission.status === 'taken_over' && !identity.editor) return denyProtectedAccess(identity, 'submissions');
             if (!ownFile && !trashedFile && !(await cmsStore.isPublishedSubmission(submission.id))) return send(404, page('Nicht gefunden', '<section><h1>Datei nicht gefunden</h1></section>'));
             const file = await getSubmissionFile(submissionRoot, submission.storedName);
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, ownFile || trashedFile ? 'submission.file' : 'submission.published_file', 'submission', submission.id);
@@ -748,8 +749,9 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               const id = form.get('id');
               if (!/^[1-9][0-9]{0,9}$/.test(id || '') || form.get('confirm') !== id) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
               const deleted = await cmsStore.deleteSubmission(identity.uuid, id, editorDelete);
-              if (!deleted) return send(409, page('Nicht mehr löschbar', '<section><h1>Dieser Steckbrief wurde bereits übernommen oder ist nicht mehr verfügbar.</h1></section>'));
-              return redirect(`${base}submissions/`, 'Steckbrief in den Papierkorb verschoben.');
+              if (!deleted) return send(409, page('Nicht mehr löschbar', '<section><h1>Dieser Steckbrief ist noch mit einem Update oder einer Ausgabe verknüpft oder nicht mehr verfügbar. Bitte zuerst die Verknüpfungen entfernen.</h1></section>'));
+              const returnTo = editorDelete && form.get('returnTo') === 'issues' ? `${base}editor/issues/` : editorDelete && form.get('returnTo') === 'editor' ? `${base}editor/` : `${base}submissions/`;
+              return redirect(returnTo, 'Steckbrief in den Papierkorb verschoben.');
             }
             if (path === `${base}trash/restore`) {
               const kind = form.get('kind');
@@ -782,7 +784,8 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               const id = form.get('id');
               if (!/^[1-9][0-9]{0,9}$/.test(id || '') || form.get('confirm') !== id) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
               if (!(await cmsStore.deleteContribution(identity.uuid, id, editorDelete))) return send(409, page('Nicht mehr löschbar', '<section><h1>Dieser Beitrag wurde bereits übernommen oder ist nicht mehr verfügbar.</h1></section>'));
-              return redirect(editorDelete ? `${base}editor/` : `${base}contributions/`, 'Beitrag in den Papierkorb verschoben.');
+              const returnTo = editorDelete && form.get('returnTo') === 'issues' ? `${base}editor/issues/` : editorDelete ? `${base}editor/` : `${base}contributions/`;
+              return redirect(returnTo, 'Beitrag in den Papierkorb verschoben.');
             }
             if (issueMailMatch) {
               if (!colleagueDeliveryEnabled(mailConfig)) return send(403, page('Versand gesperrt', '<section><h1>Der Versand an das Kollegium ist im Testmodus gesperrt.</h1></section>'));

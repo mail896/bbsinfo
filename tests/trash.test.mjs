@@ -81,13 +81,37 @@ test('Redaktionspapierkorb lädt Beiträge aller Nutzer mit Text und Eigentümer
   const submissionQuery = queries.find((entry) => entry.sql.includes('FROM submissions s LEFT JOIN'));
   assert.ok(contributionQuery.sql.includes('c.body_html AS bodyHtml') && contributionQuery.sql.includes('p.display_name AS ownerName'));
   assert.ok(!contributionQuery.sql.includes('c.owner_uuid = ?') && !submissionQuery.sql.includes('s.owner_uuid = ?'));
+  assert.ok(submissionQuery.sql.includes("s.status IN ('submitted', 'taken_over')"));
   queries.length = 0;
   await store.listTrash(actor, false);
   assert.ok(queries.find((entry) => entry.sql.includes('FROM contributions c LEFT JOIN')).sql.includes('c.owner_uuid = ?'));
-  assert.ok(queries.find((entry) => entry.sql.includes('FROM submissions s LEFT JOIN')).params.includes(actor));
+  const ownSubmissions = queries.find((entry) => entry.sql.includes('FROM submissions s LEFT JOIN'));
+  assert.ok(ownSubmissions.params.includes(actor));
+  assert.ok(ownSubmissions.sql.includes("s.status = 'submitted'"));
   queries.length = 0;
   await store.getSubmission(6, true);
-  assert.ok(queries[0].sql.includes("status = 'submitted' AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY"));
+  assert.ok(queries[0].sql.includes("status IN ('submitted', 'taken_over') AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY"));
+});
+
+test('Übernommene Steckbriefe dürfen nur ohne Update- oder Ausgabenverknüpfung in den Papierkorb', async () => {
+  let linked = 1;
+  const { calls, pool } = transactionStore((sql) => {
+    if (sql.startsWith('SELECT owner_uuid AS ownerUuid, status, title, stored_name AS storedName FROM submissions')) return [{ ownerUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', status: 'taken_over', title: 'Profil', storedName: 'private-file' }];
+    if (sql.includes('FROM update_submissions WHERE submission_id')) return [{ used: linked }];
+    if (sql.startsWith('SELECT title FROM submissions')) return [{ title: 'Profil' }];
+    return [];
+  });
+  const store = createCmsStore(pool);
+  assert.equal(await store.deleteSubmission(actor, 7, true), null);
+  assert.ok(!calls.some((call) => call.sql?.startsWith('UPDATE submissions SET deleted_at')));
+  linked = 0;
+  assert.equal(await store.deleteSubmission(actor, 7, true), 'private-file');
+  assert.ok(calls.some((call) => call.sql?.includes('EXISTS(SELECT 1 FROM issue_submissions WHERE submission_id = ?)') && call.params[0] === 7 && call.params[1] === 7));
+  assert.equal(await store.deleteSubmission(actor, 7, false), null);
+  assert.equal(await store.restoreTrash(actor, 'submission', 7, true), true);
+  assert.ok(calls.some((call) => call.sql?.includes("FROM submissions WHERE id = ? AND status IN ('submitted', 'taken_over') AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY")));
+  await store.restoreTrash(actor, 'submission', 7, false);
+  assert.ok(calls.some((call) => call.sql?.includes("FROM submissions WHERE id = ? AND owner_uuid = ? AND status = 'submitted' AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY")));
 });
 
 test('Endgültige Bereinigung erhält Ausgabennummer bis zur Löschung und entfernt Steckbriefdatei vor der DB-Zeile', async () => {

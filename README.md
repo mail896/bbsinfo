@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.1.1** · 29. Oktober 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.1.2** · 29. Oktober 2026 · Idee und Konzeption: Marc Schulz
 
 BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 
@@ -13,7 +13,7 @@ BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurz
 - Eigene Beiträge und Steckbriefe des Kollegiums mit redaktioneller Übernahme.
 - Nummerierte Ausgaben aus eigenen Texten und ausgewählten Beiträgen; eingebettete Steckbriefe, Webansicht und PDF-Download.
 - 30-Tage-Papierkorb für Updates, Ausgaben, private Beiträge und Steckbriefe; bereits angekündigte Ausgaben bleiben vor Löschung geschützt.
-- Die Redaktion kann offene Einreichungen in den Papierkorb verschieben und dort Beiträge aller Konten prüfen; persönliche Papierkörbe zeigen nur eigene Einreichungen.
+- Die Redaktion kann offene Einreichungen und unverknüpfte übernommene Steckbriefe direkt in den Papierkorb verschieben und dort Beiträge aller Konten prüfen; persönliche Papierkörbe zeigen nur eigene offene Einreichungen.
 - Volltextsuche in neuen Inhalten sowie Suche im geschützten, teilweise per OCR erschlossenen historischen PDF-Archiv.
 - Persönliche Update-Mails nach Wahl: sofort, täglich, wöchentlich oder keine. Vor jedem Versand wird die aktuelle IServ-Gruppenzugehörigkeit geprüft.
 - Getrennte Ausgaben-Mail mit Vorschau, bearbeitbarer Vorlage und ausdrücklicher Freigabe für einen Verteiler.

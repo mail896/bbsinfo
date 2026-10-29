@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { createCmsStore } from '../backend/cms-store.mjs';
 import { createApp } from '../backend/server.mjs';
-import { issueEditPage, issueEditorPage } from '../backend/web-pages.mjs';
+import { editorPage, issueEditPage, issueEditorPage } from '../backend/web-pages.mjs';
 
 const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const reader = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -114,6 +114,22 @@ test('Ausgabenformular behält ausgewählte Quellen trotz begrenzter Trefferlist
   assert.match(create, /data-issue-source="contributions"/);
 });
 
+test('Redaktionslisten zeigen direkte Papierkorbknöpfe ohne verschachtelte Formulare', () => {
+  const empty = { items: [], hasMore: false };
+  const articles = { fresh: { items: [{ id: 5, title: 'Bericht', author: 'Lea' }], hasMore: false }, used: empty };
+  const files = { fresh: { items: [{ id: 6, title: 'Profil', ownerName: 'Lea' }], hasMore: false }, used: empty };
+  const page = issueEditorPage([], { fresh: empty, used: empty }, [], files, [], 'csrf', '2026/27', {}, articles);
+  assert.match(page, /data-source-delete="contributions" data-source-id="5"/);
+  assert.match(page, /data-source-delete="submissions" data-source-id="6"/);
+  assert.match(page, /Ausgabe jetzt veröffentlichen<\/button><\/form><form hidden[^>]+data-source-delete-form="contributions"/);
+  const updateEditor = editorPage([], [], [{ id: 6, title: 'Profil', ownerName: 'Lea' }], [], 'csrf');
+  assert.match(updateEditor, /Übernommene Steckbriefe anhängen[\s\S]*data-source-delete="submissions" data-source-id="6"/);
+  assert.match(updateEditor, /Als Entwurf speichern<\/button><\/p><\/form><form hidden[^>]+data-source-delete-form="submissions"/);
+  const linkedFiles = { fresh: { items: [{ id: 7, title: 'Verknüpft', linked: 1 }], hasMore: false }, used: empty };
+  const linkedPage = issueEditorPage([], { fresh: empty, used: empty }, [], linkedFiles, [], 'csrf', '2026/27', {}, articles);
+  assert.doesNotMatch(linkedPage, /data-source-delete="submissions" data-source-id="7"/);
+});
+
 test('Bereits ausgewählte Steckbriefe zeigen beim Bearbeiten den IServ-Namen', async () => {
   const statements = [];
   const conn = {
@@ -144,6 +160,7 @@ test('Suchen und Nachladen im Browser erhalten die bereits gewählten Quellen', 
     addEventListener(name, callback) { this.listeners[name] = callback; }
     closest(selector) {
       for (let node = this; node; node = node.parentElement) {
+        if (selector === '[data-source-delete]' && node.dataset?.sourceDelete) return node;
         if (selector === '.issue-source-row' && node.className === 'issue-source-row') return node;
         if (selector === '[data-issue-source-results="used"]' && node.dataset?.issueSourceResults === 'used') return node;
       }
@@ -181,13 +198,17 @@ test('Suchen und Nachladen im Browser erhalten die bereits gewählten Quellen', 
   root.querySelector = (selector) => controls.get(selector);
   const requests = [];
   const document = {
+    listeners: {},
+    addEventListener(name, callback) { this.listeners[name] = callback; },
     querySelectorAll(selector) { return selector === '[data-issue-source]' ? [root] : []; },
+    querySelector(selector) { return selector === 'form[data-source-delete-form="submissions"]' ? deleteForm : null; },
     createElement(tag) { return tag === 'input' ? new Input() : new Element(tag); },
     createTextNode(value) { return { textContent: String(value) }; },
   };
+  let deleteForm = null;
   const script = readFileSync(new URL('../design/web/editor.js', import.meta.url), 'utf8');
   runInNewContext(script, {
-    document, HTMLInputElement: Input, URLSearchParams, Intl, Date, setTimeout, clearTimeout,
+    document, Element, HTMLInputElement: Input, URLSearchParams, Intl, Date, setTimeout, clearTimeout,
     fetch: async (url) => {
       const params = new URL(url, 'https://apps.school.example').searchParams;
       requests.push({ q: params.get('q'), used: params.get('used'), page: params.get('page') });
@@ -252,4 +273,15 @@ test('Suchen und Nachladen im Browser erhalten die bereits gewählten Quellen', 
   search.listeners.keydown({ key: 'Enter', preventDefault() {} });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(usedDetails.open, false);
+  const fields = { id: { value: '' }, confirm: { value: 'old' } };
+  let submitted = 0;
+  deleteForm = { dataset: {}, querySelector(selector) { return fields[selector.includes('"confirm"') ? 'confirm' : 'id']; }, requestSubmit() { submitted++; } };
+  const deleteButton = new Element('button');
+  Object.assign(deleteButton.dataset, { sourceDelete: 'submissions', sourceId: '903', sourceTitle: 'Profil <Test>' });
+  document.listeners.click({ target: deleteButton });
+  assert.equal(deleteForm.dataset.confirmDelete, 'Profil <Test>');
+  assert.equal(deleteForm.dataset.confirmId, '903');
+  assert.equal(fields.id.value, '903');
+  assert.equal(fields.confirm.value, '');
+  assert.equal(submitted, 1);
 });

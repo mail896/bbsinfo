@@ -158,8 +158,34 @@
         row.append(reference);
       }
     }
+    if (!used && kind !== 'updates' && !item.linked) {
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'delete-x';
+      deleteButton.dataset.sourceDelete = kind;
+      deleteButton.dataset.sourceId = String(item.id);
+      deleteButton.dataset.sourceTitle = item.title;
+      deleteButton.textContent = '× In Papierkorb';
+      deleteButton.setAttribute('aria-label', `${kind === 'contributions' ? 'Beitrag' : 'Steckbrief'} ${item.title} in den Papierkorb verschieben`);
+      row.append(deleteButton);
+    }
     return row;
   }
+
+  document.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-source-delete]') : null;
+    if (!button) return;
+    const kind = button.dataset.sourceDelete;
+    const id = button.dataset.sourceId;
+    if (!['contributions', 'submissions'].includes(kind) || !/^[1-9][0-9]*$/.test(id || '')) return;
+    const form = document.querySelector(`form[data-source-delete-form="${kind}"]`);
+    if (!form) return;
+    form.dataset.confirmDelete = button.dataset.sourceTitle || '';
+    form.dataset.confirmId = id;
+    form.querySelector('input[name="id"]').value = id;
+    form.querySelector('input[name="confirm"]').value = '';
+    form.requestSubmit();
+  });
 
   document.querySelectorAll('[data-issue-source]').forEach((root) => {
     const kind = root.dataset.issueSource;

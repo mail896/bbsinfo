@@ -943,6 +943,8 @@ legend {
 .issue-source-used > p { margin: 9px 0; font-size: .86rem; }
 .issue-source-used .choice { margin-bottom: 0; }
 .issue-source-reference { display: block; margin: 0 0 8px 25px; color: var(--muted); font-size: .8rem; }
+.issue-source-row > .delete-x { margin: 0 0 8px 25px; }
+.issue-source-current [data-source-delete] { display: none; }
 .issue-source-search-label { max-width: 360px; margin: 0 0 12px; color: var(--muted); font-size: .86rem; }
 .issue-source-search-label input { margin-top: 4px; font-size: .94rem; }
 .issue-source-more { margin-top: 10px; padding: 6px 11px; font-size: .86rem; }

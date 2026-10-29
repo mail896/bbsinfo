@@ -88,7 +88,7 @@ const issueSourceQueries = {
     order: 'c.created_at DESC, c.id DESC',
   },
   submissions: {
-    select: "SELECT s.id, s.title, p.display_name AS ownerName, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published' AND i.deleted_at IS NULL) AS usedInIssues FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid",
+    select: "SELECT s.id, s.title, p.display_name AS ownerName, (EXISTS(SELECT 1 FROM update_submissions us WHERE us.submission_id = s.id) OR EXISTS(SELECT 1 FROM issue_submissions isu WHERE isu.submission_id = s.id)) AS linked, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published' AND i.deleted_at IS NULL) AS usedInIssues FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid",
     available: "s.status = 'taken_over'",
     used: "EXISTS (SELECT 1 FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published' AND i.deleted_at IS NULL)",
     search: ['s.title', 'p.display_name'],
@@ -431,7 +431,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (new Set(fileIds).size !== fileIds.length) throw new Error('Doppelter Steckbrief.');
       return transact(async (conn) => {
         if (fileIds.length) {
-          const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND deleted_at IS NULL AND id IN (${fileIds.map(() => '?').join(',')})`, fileIds);
+          const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND deleted_at IS NULL AND id IN (${fileIds.map(() => '?').join(',')}) FOR UPDATE`, fileIds);
           if (found.length !== fileIds.length) throw new Error('Steckbrief noch nicht übernommen.');
         }
         const result = await conn.query('INSERT INTO updates (title, body, body_html, created_by, updated_by) VALUES (?, ?, ?, ?, ?)', [content.title, content.body, content.bodyHtml, uuid, uuid]);
@@ -848,14 +848,14 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       return pool.query("SELECT s.id, s.owner_uuid AS ownerUuid, p.display_name AS ownerName, s.title, s.note, s.media_type AS mediaType, s.byte_size AS byteSize, s.status, DATE_FORMAT(s.created_at, '%d.%m.%Y %H:%i') AS createdAt FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 100");
     },
     async listTakenOverSubmissions() {
-      return pool.query("SELECT s.id, s.title, s.owner_uuid AS ownerUuid, p.display_name AS ownerName FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE s.status = 'taken_over' AND s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 100");
+      return pool.query("SELECT s.id, s.title, s.owner_uuid AS ownerUuid, p.display_name AS ownerName, (EXISTS(SELECT 1 FROM update_submissions us WHERE us.submission_id = s.id) OR EXISTS(SELECT 1 FROM issue_submissions isu WHERE isu.submission_id = s.id)) AS linked FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE s.status = 'taken_over' AND s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 100");
     },
     async listIssueSubmissions(options = {}) {
       return issueSourcePage(pool, 'submissions', options);
     },
     async getSubmission(submissionId, trashed = false) {
       if (typeof trashed !== 'boolean') throw new Error('Ungültige Dateiansicht.');
-      const rows = await pool.query(`SELECT id, owner_uuid AS ownerUuid, title, note, stored_name AS storedName, media_type AS mediaType, byte_size AS byteSize, status FROM submissions WHERE id = ? AND ${trashed ? "status = 'submitted' AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY" : 'deleted_at IS NULL'}`, [validUpdateId(submissionId)]);
+      const rows = await pool.query(`SELECT id, owner_uuid AS ownerUuid, title, note, stored_name AS storedName, media_type AS mediaType, byte_size AS byteSize, status FROM submissions WHERE id = ? AND ${trashed ? "status IN ('submitted', 'taken_over') AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY" : 'deleted_at IS NULL'}`, [validUpdateId(submissionId)]);
       return rows.length === 1 ? rows[0] : null;
     },
     async isPublishedSubmission(submissionId) {
@@ -892,7 +892,9 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (typeof editor !== 'boolean') throw new Error('Ungültige Redaktionsrolle.');
       return transact(async (conn) => {
         const rows = await conn.query('SELECT owner_uuid AS ownerUuid, status, title, stored_name AS storedName FROM submissions WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
-        if (rows.length !== 1 || (!editor && rows[0].ownerUuid !== uuid) || rows[0].status !== 'submitted') return null;
+        if (rows.length !== 1 || (!editor && rows[0].ownerUuid !== uuid) || !['submitted', 'taken_over'].includes(rows[0].status) || (!editor && rows[0].status !== 'submitted')) return null;
+        const linked = await conn.query('SELECT (EXISTS(SELECT 1 FROM update_submissions WHERE submission_id = ?) OR EXISTS(SELECT 1 FROM issue_submissions WHERE submission_id = ?)) AS used', [id, id]);
+        if (Number(linked[0]?.used || 0) !== 0) return null;
         await conn.query('UPDATE submissions SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?', [uuid, id]);
         await audit(conn, uuid, 'submission.delete', 'submission', id, rows[0].title);
         return rows[0].storedName;
@@ -907,7 +909,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
         editor ? pool.query("SELECT id, title, status, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM updates WHERE deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
         editor ? pool.query("SELECT id, number, title, status, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM issues WHERE deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
         pool.query(`SELECT c.id, c.title, c.body, c.body_html AS bodyHtml, p.display_name AS ownerName, DATE_FORMAT(c.deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM contributions c LEFT JOIN iserv_identities p ON p.user_uuid = c.owner_uuid WHERE ${editor ? '' : 'c.owner_uuid = ? AND '}c.status = 'submitted' AND c.deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY c.deleted_at DESC, c.id DESC LIMIT ? OFFSET ?`, editor ? [limit, offset] : [uuid, limit, offset]),
-        pool.query(`SELECT s.id, s.title, p.display_name AS ownerName, DATE_FORMAT(s.deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE ${editor ? '' : 's.owner_uuid = ? AND '}s.status = 'submitted' AND s.deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY s.deleted_at DESC, s.id DESC LIMIT ? OFFSET ?`, editor ? [limit, offset] : [uuid, limit, offset]),
+        pool.query(`SELECT s.id, s.title, s.status, p.display_name AS ownerName, DATE_FORMAT(s.deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE ${editor ? '' : 's.owner_uuid = ? AND '}s.status ${editor ? "IN ('submitted', 'taken_over')" : "= 'submitted'"} AND s.deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY s.deleted_at DESC, s.id DESC LIMIT ? OFFSET ?`, editor ? [limit, offset] : [uuid, limit, offset]),
       ]);
       return { updates: updates.slice(0, 50), issues: issues.slice(0, 50), contributions: contributions.slice(0, 50), submissions: submissions.slice(0, 50), page, hasNext: [updates, issues, contributions, submissions].some((rows) => rows.length > 50) };
     },
@@ -920,7 +922,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       return transact(async (conn) => {
         const privateSubmission = ['contribution', 'submission'].includes(kind);
         const owner = privateSubmission && !editor ? ' AND owner_uuid = ?' : '';
-        const status = privateSubmission ? " AND status = 'submitted'" : '';
+        const status = kind === 'contribution' ? " AND status = 'submitted'" : kind === 'submission' ? editor ? " AND status IN ('submitted', 'taken_over')" : " AND status = 'submitted'" : '';
         const rows = await conn.query(`SELECT title${kind === 'issue' ? ', number, status' : ''} FROM ${table} WHERE id = ?${owner}${status} AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE`, owner ? [id, uuid] : [id]);
         if (rows.length !== 1) return false;
         await conn.query(`UPDATE ${table} SET deleted_at = NULL, deleted_by = NULL WHERE id = ?`, [id]);
