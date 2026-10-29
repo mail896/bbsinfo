@@ -109,12 +109,12 @@ function fakeCmsStore() {
   let appSettings = { ...defaultAppSettings };
   return {
     events,
-    async listTrash(actor, editor = false) { return { updates: editor ? trash.updates : [], issues: editor ? trash.issues : [], contributions: trash.contributions.filter((row) => row.ownerUuid === actor), submissions: trash.submissions.filter((row) => row.ownerUuid === actor) }; },
+    async listTrash(actor, editor = false) { return { updates: editor ? trash.updates : [], issues: editor ? trash.issues : [], contributions: trash.contributions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })), submissions: trash.submissions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })) }; },
     async restoreTrash(actor, kind, id, editor = false) {
       const mapping = { update: ['updates', published], issue: ['issues', issues], contribution: ['contributions', contributions], submission: ['submissions', submissions] }[kind];
       if (!mapping || (['update', 'issue'].includes(kind) && !editor)) return false;
       const [name, active] = mapping;
-      const index = trash[name].findIndex((row) => row.id === Number(id) && (['update', 'issue'].includes(kind) || row.ownerUuid === actor));
+      const index = trash[name].findIndex((row) => row.id === Number(id) && (editor || ['update', 'issue'].includes(kind) || row.ownerUuid === actor));
       if (index < 0) return false;
       const row = trash[name].splice(index, 1)[0];
       (kind === 'update' && row.status === 'draft' ? drafts : kind === 'issue' && row.status === 'draft' ? issueDrafts : active).push(row);
@@ -154,7 +154,7 @@ function fakeCmsStore() {
     async listSubmittedContributions() { return contributions.filter((item) => item.status === 'submitted').map((item) => ({ ...item, author: identities.get(item.ownerUuid) })); },
     async listIssueContributions() { return contributions.filter((item) => item.status === 'submitted' || issues.some((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id)))).map((item) => ({ ...item, author: identities.get(item.ownerUuid), usedInIssues: issues.filter((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
     async saveContribution(actor, id, title, body, bodyHtml) { const row = id === null ? { id: contributions.length + 1, ownerUuid: actor, status: 'submitted' } : contributions.find((item) => item.id === Number(id) && item.ownerUuid === actor && item.status === 'submitted'); if (!row) return null; Object.assign(row, { title, body, bodyHtml }); if (id === null) contributions.push(row); return row.id; },
-    async deleteContribution(actor, id) { const index = contributions.findIndex((item) => item.id === Number(id) && item.ownerUuid === actor && item.status === 'submitted'); if (index < 0) return false; trash.contributions.push({ ...contributions.splice(index, 1)[0], deletedAtUtc: '2026-10-29 10:00:00' }); return true; },
+    async deleteContribution(actor, id, editor = false) { const index = contributions.findIndex((item) => item.id === Number(id) && (editor || item.ownerUuid === actor) && item.status === 'submitted'); if (index < 0) return false; trash.contributions.push({ ...contributions.splice(index, 1)[0], deletedAtUtc: '2026-10-29 10:00:00' }); return true; },
     async listAudit(before, limit, filters = {}) { return events.map((event, id) => ({ id, occurredAt: '2026-10-26 12:00:00', actorUuid: event.actor, actorName: identities.get(event.actor), action: event.action, objectType: event.type, objectId: event.id, objectTitle: event.title || (event.type === 'update' ? [...drafts, ...published].find((row) => row.id === event.id)?.title : null) })).filter((event) => (!filters.actor || event.actorUuid === filters.actor || event.actorName?.toLowerCase().includes(filters.actor.toLowerCase())) && (!filters.action || event.action === filters.action)); },
     async listAuditPage(page = 1, filters = {}, through = null) { const rows = (await this.listAudit(null, 1000, filters)).filter((row) => through === null || row.id <= Number(through)).reverse(); return { events: rows.slice((page - 1) * 50, page * 50), hasMore: rows.length > page * 50, page, pageCount: Math.max(1, Math.ceil(rows.length / 50)), through: through || String(rows[0]?.id || '') }; },
     async listUsageStats(days = 30) { return { days, daily: [{ day: '26.10.2026', action: 'session.login', eventCount: events.filter((event) => event.action === 'session.login').length }], topContent: [], searchTerms: [], searchPeople: [], activeUsers: 1, subscriptions: [...subscriptions.values()].filter((mode) => mode !== 'off').length }; },
@@ -181,11 +181,11 @@ function fakeCmsStore() {
     async listAllSubmissions() { return submissions.map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid) })); },
     async listTakenOverSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid) })); },
     async listIssueSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), usedInIssues: issues.filter((issue) => issue.attachments?.some((file) => Number(file.id) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
-    async getSubmission(id) { return submissions.find((item) => item.id === Number(id)) || null; },
+    async getSubmission(id, trashed = false) { return (trashed ? trash.submissions : submissions).find((item) => item.id === Number(id)) || null; },
     async isPublishedSubmission(id) { return published.some((item) => item.attachments?.some((file) => file?.id === Number(id))) || issues.some((issue) => issue.attachments?.some((file) => file?.id === Number(id))); },
     async takeOverSubmission(actor, id) { const item = submissions.find((row) => row.id === Number(id) && row.status === 'submitted'); if (!item) return false; item.status = 'taken_over'; events.push({ actor, action: 'submission.take_over' }); return true; },
     async replaceSubmission(actor, id, title, note, storedName, mediaType, byteSize) { const item = submissions.find((row) => row.id === Number(id) && row.ownerUuid === actor && row.status === 'submitted'); if (!item) return null; const oldName = item.storedName; Object.assign(item, { title, note, storedName, mediaType, byteSize }); events.push({ actor, action: 'submission.replace' }); return oldName; },
-    async deleteSubmission(actor, id) { const index = submissions.findIndex((row) => row.id === Number(id) && row.ownerUuid === actor && row.status === 'submitted'); if (index < 0) return null; const [item] = submissions.splice(index, 1); trash.submissions.push({ ...item, deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'submission.delete', type: 'submission', id: item.id, title: item.title }); return item.storedName; },
+    async deleteSubmission(actor, id, editor = false) { const index = submissions.findIndex((row) => row.id === Number(id) && (editor || row.ownerUuid === actor) && row.status === 'submitted'); if (index < 0) return null; const [item] = submissions.splice(index, 1); trash.submissions.push({ ...item, deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'submission.delete', type: 'submission', id: item.id, title: item.title }); return item.storedName; },
   };
 }
 
@@ -383,6 +383,71 @@ test('Papierkorb schützt fremde Einreichungen und stellt Ausgaben mit derselben
     assert.equal((await request(editor.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, kind: 'issue', id: '1' }) })).status, 303);
     assert.equal((await request(editor.base, '/bbsinfo/issues/93', { headers: { cookie } })).status, 200);
   } finally { await new Promise((resolve) => editor.app.close(resolve)); }
+});
+
+test('Redaktion verschiebt offene fremde Text- und Datei-Einreichungen in den Papierkorb', async () => {
+  const cms = fakeCmsStore();
+  const ownerUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const submissionRoot = mkdtempSync(join(tmpdir(), 'bbsinfo-editor-delete-'));
+  const storedName = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  writeFileSync(join(submissionRoot, storedName), 'private file');
+  const owner = await setup(null, cms, { ...validInfo, 'iserv:uuid': ownerUuid, name: 'Autorin' }, submissionRoot);
+  const editor = await setup(null, cms, validInfo, submissionRoot);
+  const stranger = await setup(null, cms, { ...validInfo, 'iserv:uuid': 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Fremde' }, submissionRoot);
+  try {
+    await cms.saveContribution(ownerUuid, null, 'Offener Text', 'Text', '<p>Text</p>');
+    await cms.createSubmission(ownerUuid, 'Offene Datei', '', storedName, 'application/pdf', 12);
+    const ownerCookie = await login(owner);
+    const ownerHtml = await (await request(owner.base, '/bbsinfo/contributions/', { headers: { cookie: ownerCookie } })).text();
+    const ownerCsrf = /name="csrf" value="([a-f0-9]{64})"/.exec(ownerHtml)[1];
+    const ownerHeaders = { cookie: ownerCookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
+    for (const path of ['editor/contributions/delete', 'editor/submissions/delete']) {
+      const denied = await request(owner.base, `/bbsinfo/${path}`, { method: 'POST', headers: ownerHeaders, body: new URLSearchParams({ csrf: ownerCsrf, id: '1', confirm: '1' }) });
+      assert.equal(denied.status, 403);
+    }
+
+    const editorCookie = await login(editor);
+    const editorHtml = await (await request(editor.base, '/bbsinfo/editor/', { headers: { cookie: editorCookie } })).text();
+    const editorCsrf = /name="csrf" value="([a-f0-9]{64})"/.exec(editorHtml)[1];
+    assert.match(editorHtml, /Offener Text/);
+    assert.match(editorHtml, /action="\/bbsinfo\/editor\/contributions\/delete"/);
+    const filesHtml = await (await request(editor.base, '/bbsinfo/submissions/', { headers: { cookie: editorCookie } })).text();
+    assert.match(filesHtml, /Offene Datei/);
+    assert.match(filesHtml, /action="\/bbsinfo\/editor\/submissions\/delete"/);
+    const headers = { cookie: editorCookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
+    const missingConfirm = await request(editor.base, '/bbsinfo/editor/contributions/delete', { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, id: '1' }) });
+    assert.equal(missingConfirm.status, 400);
+    for (const path of ['editor/contributions/delete', 'editor/submissions/delete']) {
+      const response = await request(editor.base, `/bbsinfo/${path}`, { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, id: '1', confirm: '1' }) });
+      assert.equal(response.status, 303);
+    }
+    const after = await (await request(editor.base, '/bbsinfo/editor/', { headers: { cookie: editorCookie } })).text();
+    assert.doesNotMatch(after, /Offener Text/);
+    const trash = await (await request(editor.base, '/bbsinfo/editor/settings/?tab=trash', { headers: { cookie: editorCookie } })).text();
+    assert.match(trash, /Offener Text/);
+    assert.match(trash, /Offene Datei/);
+    assert.match(trash, /von Autorin/);
+    assert.match(trash, /<summary>Beitrag ansehen<\/summary>/);
+    assert.match(trash, /<p>Text<\/p>/);
+    assert.match(trash, /href="\/bbsinfo\/trash\/submissions\/1\/file"/);
+    assert.equal((await request(editor.base, '/bbsinfo/trash/submissions/1/file', { headers: { cookie: editorCookie } })).status, 200);
+    assert.equal((await request(owner.base, '/bbsinfo/trash/submissions/1/file', { headers: { cookie: ownerCookie } })).status, 200);
+    const strangerCookie = await login(stranger);
+    assert.equal((await request(stranger.base, '/bbsinfo/trash/submissions/1/file', { headers: { cookie: strangerCookie } })).status, 403);
+    assert.doesNotMatch(await (await request(stranger.base, '/bbsinfo/trash/', { headers: { cookie: strangerCookie } })).text(), /Offener Text|Offene Datei/);
+    assert.equal((await request(editor.base, '/bbsinfo/submissions/1/file', { headers: { cookie: editorCookie } })).status, 404);
+    const ownerTrash = await (await request(owner.base, '/bbsinfo/trash/', { headers: { cookie: ownerCookie } })).text();
+    assert.match(ownerTrash, /Offener Text/);
+    assert.match(ownerTrash, /Offene Datei/);
+    for (const kind of ['contribution', 'submission']) {
+      const restored = await request(editor.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, kind, id: '1' }) });
+      assert.equal(restored.status, 303);
+    }
+    assert.match(await (await request(editor.base, '/bbsinfo/editor/', { headers: { cookie: editorCookie } })).text(), /Offener Text/);
+  } finally {
+    await Promise.all([new Promise((resolve) => owner.app.close(resolve)), new Promise((resolve) => editor.app.close(resolve)), new Promise((resolve) => stranger.app.close(resolve))]);
+    rmSync(submissionRoot, { recursive: true, force: true });
+  }
 });
 
 test('Updates: Redaktion veröffentlicht, Kollegium liest und verwaltet eigenes Abo', async () => {
