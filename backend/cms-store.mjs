@@ -60,7 +60,7 @@ function auditFilterConditions(filters) {
   }
   if (action) { clauses.push('e.action = ?'); params.push(action); }
   if (object) {
-    clauses.push("(LOCATE(LOWER(?), LOWER(COALESCE(e.object_title, u.title, draft_issue.title, published_issue.title, ''))) > 0 OR LOCATE(LOWER(?), LOWER(COALESCE(e.object_id, ''))) > 0 OR LOCATE(LOWER(?), LOWER(COALESCE(e.object_type, ''))) > 0 OR (e.object_type = 'issue' AND e.action <> 'issue.create' AND LOCATE(LOWER(?), LOWER(CONCAT('BBS Info ', e.object_id, ': ', COALESCE(e.object_title, published_issue.title, '')))) > 0))");
+    clauses.push("(LOCATE(LOWER(?), LOWER(COALESCE(e.object_title, u.title, draft_issue.title, published_issue.title, ''))) > 0 OR LOCATE(LOWER(?), LOWER(COALESCE(e.object_id, ''))) > 0 OR LOCATE(LOWER(?), LOWER(COALESCE(e.object_type, ''))) > 0 OR (e.object_type = 'issue' AND e.action NOT IN ('issue.create', 'issue.draft_delete', 'issue.draft_restore', 'issue.draft_purge') AND LOCATE(LOWER(?), LOWER(CONCAT('BBS Info ', e.object_id, ': ', COALESCE(e.object_title, published_issue.title, '')))) > 0))");
     params.push(object, object, object, object);
   }
   if (fromUtc) { clauses.push('e.occurred_at >= ?'); params.push(fromUtc); }
@@ -69,28 +69,28 @@ function auditFilterConditions(filters) {
 }
 
 const auditUpdateJoin = " LEFT JOIN updates u ON e.object_type = 'update' AND u.id = e.object_id";
-const auditIssueJoin = " LEFT JOIN issues draft_issue ON e.object_type = 'issue' AND e.action = 'issue.create' AND draft_issue.id = e.object_id LEFT JOIN issues published_issue ON e.object_type = 'issue' AND e.action <> 'issue.create' AND published_issue.number = e.object_id";
+const auditIssueJoin = " LEFT JOIN issues draft_issue ON e.object_type = 'issue' AND e.action IN ('issue.create', 'issue.draft_delete', 'issue.draft_restore', 'issue.draft_purge') AND draft_issue.id = e.object_id LEFT JOIN issues published_issue ON e.object_type = 'issue' AND e.action NOT IN ('issue.create', 'issue.draft_delete', 'issue.draft_restore', 'issue.draft_purge') AND published_issue.number = e.object_id";
 
 const issueSourceQueries = {
   updates: {
-    select: "SELECT u.id, u.title, DATE_FORMAT(u.published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE iu.update_id = u.id AND i.status = 'published') AS usedInIssues FROM updates u",
+    select: "SELECT u.id, u.title, DATE_FORMAT(u.published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE iu.update_id = u.id AND i.status = 'published' AND i.deleted_at IS NULL) AS usedInIssues FROM updates u",
     available: "u.status = 'published'",
-    used: "EXISTS (SELECT 1 FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE iu.update_id = u.id AND i.status = 'published')",
+    used: "EXISTS (SELECT 1 FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE iu.update_id = u.id AND i.status = 'published' AND i.deleted_at IS NULL)",
     search: ['u.title'],
     order: 'u.published_at DESC, u.id DESC',
   },
   contributions: {
-    select: "SELECT c.id, c.title, p.display_name AS author, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE ic.contribution_id = c.id AND i.status = 'published') AS usedInIssues FROM contributions c JOIN iserv_identities p ON p.user_uuid = c.owner_uuid",
+    select: "SELECT c.id, c.title, p.display_name AS author, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE ic.contribution_id = c.id AND i.status = 'published' AND i.deleted_at IS NULL) AS usedInIssues FROM contributions c JOIN iserv_identities p ON p.user_uuid = c.owner_uuid",
     available: "c.status = 'submitted'",
     includeUsed: true,
-    used: "EXISTS (SELECT 1 FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE ic.contribution_id = c.id AND i.status = 'published')",
+    used: "EXISTS (SELECT 1 FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE ic.contribution_id = c.id AND i.status = 'published' AND i.deleted_at IS NULL)",
     search: ['c.title', 'p.display_name'],
     order: 'c.created_at DESC, c.id DESC',
   },
   submissions: {
-    select: "SELECT s.id, s.title, p.display_name AS ownerName, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published') AS usedInIssues FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid",
+    select: "SELECT s.id, s.title, p.display_name AS ownerName, (SELECT GROUP_CONCAT(i.number ORDER BY i.number SEPARATOR ',') FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published' AND i.deleted_at IS NULL) AS usedInIssues FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid",
     available: "s.status = 'taken_over'",
-    used: "EXISTS (SELECT 1 FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published')",
+    used: "EXISTS (SELECT 1 FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = s.id AND i.status = 'published' AND i.deleted_at IS NULL)",
     search: ['s.title', 'p.display_name'],
     order: 's.id DESC',
   },
@@ -101,7 +101,8 @@ async function issueSourcePage(pool, kind, options = {}) {
   const { query = '', used = false, page = 1 } = options;
   if (!source || typeof query !== 'string' || query.length > 100 || /[\u0000-\u001f\u007f]/u.test(query) || typeof used !== 'boolean' || !Number.isSafeInteger(page) || page < 1 || page > 2000) throw new Error('Ungültige Ausgabenquelle.');
   const term = query.trim();
-  const conditions = [source.includeUsed ? `(${source.available} OR ${source.used})` : source.available, used ? source.used : `NOT (${source.used})`];
+  const alias = { updates: 'u', contributions: 'c', submissions: 's' }[kind];
+  const conditions = [`${alias}.deleted_at IS NULL`, source.includeUsed ? `(${source.available} OR ${source.used})` : source.available, used ? source.used : `NOT (${source.used})`];
   const params = [];
   if (term) {
     conditions.push(`(${source.search.map((column) => `LOCATE(LOWER(?), LOWER(${column})) > 0`).join(' OR ')})`);
@@ -160,7 +161,7 @@ function validIssue(title, body, schoolYear, period, updateIds, bodyHtml = null,
 
 async function snapshotContributions(conn, issueId, ids, actor, previouslyIncluded = new Set()) {
   if (!ids.length) return;
-  const rows = await conn.query(`SELECT c.id, c.title, c.body, c.body_html AS bodyHtml, c.status, p.display_name AS author, EXISTS(SELECT 1 FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE ic.contribution_id = c.id AND i.status = 'published') AS usedBefore FROM contributions c JOIN iserv_identities p ON p.user_uuid = c.owner_uuid WHERE c.id IN (${ids.map(() => '?').join(',')}) FOR UPDATE`, ids);
+  const rows = await conn.query(`SELECT c.id, c.title, c.body, c.body_html AS bodyHtml, c.status, p.display_name AS author, EXISTS(SELECT 1 FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE ic.contribution_id = c.id AND i.status = 'published' AND i.deleted_at IS NULL) AS usedBefore FROM contributions c JOIN iserv_identities p ON p.user_uuid = c.owner_uuid WHERE c.deleted_at IS NULL AND c.id IN (${ids.map(() => '?').join(',')}) FOR UPDATE`, ids);
   if (rows.length !== ids.length || rows.some((row) => row.status !== 'submitted' && !(row.status === 'taken_over' && (Number(row.usedBefore) === 1 || previouslyIncluded.has(Number(row.id)))))) throw new Error('Ein gewählter Kollegenbeitrag ist nicht verfügbar.');
   const byId = new Map(rows.map((row) => [Number(row.id), row]));
   for (const [position, id] of ids.entries()) {
@@ -177,7 +178,7 @@ async function releaseRemovedContributions(conn, ids) {
 
 async function checkedSubmissions(conn, ids) {
   if (!ids.length) return;
-  const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND id IN (${ids.map(() => '?').join(',')}) FOR UPDATE`, ids);
+  const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND deleted_at IS NULL AND id IN (${ids.map(() => '?').join(',')}) FOR UPDATE`, ids);
   if (found.length !== ids.length) throw new Error('Ein gewählter Steckbrief ist nicht übernommen.');
 }
 
@@ -267,8 +268,8 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
     async ready() {
       const rows = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('updates', 'update_subscriptions', 'audit_events', 'iserv_identities', 'editor_grants', 'issue_sequence', 'issues', 'issue_updates', 'submissions', 'update_submissions', 'issue_submissions', 'daily_usage', 'issue_mail_delivery', 'content_templates', 'editor_images', 'app_settings', 'contributions', 'issue_contributions', 'search_events', 'update_mail_delivery')");
       if (Number(rows[0]?.n) !== 20) throw new Error('BBS-Info-Datenbankschema fehlt.');
-      const fields = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'updates' AND column_name = 'body_html') OR (table_name = 'issues' AND column_name = 'body_html') OR (table_name = 'issue_updates' AND column_name = 'snapshot_body_html') OR (table_name = 'audit_events' AND column_name = 'object_title') OR (table_name = 'audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES') OR (table_name = 'iserv_identities' AND column_name = 'email') OR (table_name = 'update_subscriptions' AND column_name = 'mode'))");
-      if (Number(fields[0]?.n) !== 7) throw new Error('BBS-Info-Datenbankspalten fehlen.');
+      const fields = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'updates' AND column_name IN ('body_html', 'deleted_at', 'deleted_by', 'mail_suppressed')) OR (table_name = 'contributions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'submissions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'issues' AND column_name IN ('body_html', 'deleted_at', 'deleted_by')) OR (table_name = 'issue_updates' AND column_name = 'snapshot_body_html') OR (table_name = 'audit_events' AND column_name = 'object_title') OR (table_name = 'audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES') OR (table_name = 'iserv_identities' AND column_name = 'email') OR (table_name = 'update_subscriptions' AND column_name = 'mode'))");
+      if (Number(fields[0]?.n) !== 16) throw new Error('BBS-Info-Datenbankspalten fehlen.');
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
     },
     async rememberIdentity(identity) {
@@ -353,20 +354,20 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       return issueSourcePage(pool, 'updates', options);
     },
     async listDigestTestUpdates() {
-      return pool.query("SELECT id, title, body, body_html AS bodyHtml FROM updates WHERE status = 'published' ORDER BY published_at DESC, id DESC LIMIT 50");
+      return pool.query("SELECT id, title, body, body_html AS bodyHtml FROM updates WHERE status = 'published' AND deleted_at IS NULL ORDER BY published_at DESC, id DESC LIMIT 50");
     },
     async listContentPage(kind, page, size = 15) {
       if (!Number.isSafeInteger(page) || page < 1 || page > 2000 || !Number.isSafeInteger(size) || size < 1 || size > 50) throw new Error('Ungültige Inhaltsseite.');
       const queries = {
-        updates: "SELECT id, title, body, body_html AS bodyHtml, DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc FROM updates WHERE status = 'published' ORDER BY published_at DESC, id DESC",
-        updateDrafts: "SELECT id, title, body, body_html AS bodyHtml, DATE_FORMAT(updated_at, '%d.%m.%Y %H:%i') AS updatedAt FROM updates WHERE status = 'draft' ORDER BY updated_at DESC, id DESC",
-        issues: "SELECT number, title, school_year AS schoolYear, period, DATE_FORMAT(published_at, '%d.%m.%Y') AS publishedAt FROM issues WHERE status = 'published' ORDER BY number DESC",
-        issueDrafts: "SELECT id, title, body, body_html AS bodyHtml, school_year AS schoolYear, period FROM issues WHERE status = 'draft' ORDER BY id DESC",
+        updates: "SELECT id, title, body, body_html AS bodyHtml, DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc FROM updates WHERE status = 'published' AND deleted_at IS NULL ORDER BY published_at DESC, id DESC",
+        updateDrafts: "SELECT id, title, body, body_html AS bodyHtml, DATE_FORMAT(updated_at, '%d.%m.%Y %H:%i') AS updatedAt FROM updates WHERE status = 'draft' AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC",
+        issues: "SELECT number, title, school_year AS schoolYear, period, DATE_FORMAT(published_at, '%d.%m.%Y') AS publishedAt FROM issues WHERE status = 'published' AND deleted_at IS NULL ORDER BY number DESC",
+        issueDrafts: "SELECT id, title, body, body_html AS bodyHtml, school_year AS schoolYear, period FROM issues WHERE status = 'draft' AND deleted_at IS NULL ORDER BY id DESC",
       };
       if (!Object.hasOwn(queries, kind)) throw new Error('Ungültige Inhaltsliste.');
       const countTables = { updates: ['updates', 'published'], updateDrafts: ['updates', 'draft'], issues: ['issues', 'published'], issueDrafts: ['issues', 'draft'] };
       const [table, status] = countTables[kind];
-      const counts = await pool.query(`SELECT COUNT(*) AS count FROM ${table} WHERE status = ?`, [status]);
+      const counts = await pool.query(`SELECT COUNT(*) AS count FROM ${table} WHERE status = ? AND deleted_at IS NULL`, [status]);
       const pageCount = Math.max(1, Math.min(2000, Math.ceil(Number(counts[0]?.count || 0) / size)));
       const rows = await pool.query(`${queries[kind]} LIMIT ${size + 1} OFFSET ${(page - 1) * size}`);
       const items = rows.slice(0, size);
@@ -380,20 +381,20 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
     },
     async getPublishedUpdate(id) {
       const updateId = validUpdateId(id);
-      const rows = await pool.query("SELECT id, title, body, body_html AS bodyHtml, DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc FROM updates WHERE status = 'published' AND id = ?", [updateId]);
+      const rows = await pool.query("SELECT id, title, body, body_html AS bodyHtml, DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc FROM updates WHERE status = 'published' AND deleted_at IS NULL AND id = ?", [updateId]);
       if (!rows.length) return null;
       const attachments = await pool.query('SELECT s.id, s.title FROM update_submissions us JOIN submissions s ON s.id = us.submission_id WHERE us.update_id = ? ORDER BY us.position', [updateId]);
       return { ...rows[0], attachments };
     },
     async homeHighlights() {
       const [updates, issues] = await Promise.all([
-        pool.query("SELECT id, title, body AS excerpt, DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc FROM updates WHERE status = 'published' ORDER BY published_at DESC, id DESC LIMIT 5"),
-        pool.query("SELECT number, title, DATE_FORMAT(published_at, '%d.%m.%Y') AS publishedAt FROM issues WHERE status = 'published' ORDER BY number DESC LIMIT 3"),
+        pool.query("SELECT id, title, body AS excerpt, DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAtUtc FROM updates WHERE status = 'published' AND deleted_at IS NULL ORDER BY published_at DESC, id DESC LIMIT 5"),
+        pool.query("SELECT number, title, DATE_FORMAT(published_at, '%d.%m.%Y') AS publishedAt FROM issues WHERE status = 'published' AND deleted_at IS NULL ORDER BY number DESC LIMIT 3"),
       ]);
       return { updates, issues };
     },
     async hasUpdateDrafts() {
-      const rows = await pool.query("SELECT 1 AS present FROM updates WHERE status = 'draft' LIMIT 1");
+      const rows = await pool.query("SELECT 1 AS present FROM updates WHERE status = 'draft' AND deleted_at IS NULL LIMIT 1");
       return rows.length > 0;
     },
     async listTemplates(activeOnly = false) {
@@ -430,7 +431,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (new Set(fileIds).size !== fileIds.length) throw new Error('Doppelter Steckbrief.');
       return transact(async (conn) => {
         if (fileIds.length) {
-          const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND id IN (${fileIds.map(() => '?').join(',')})`, fileIds);
+          const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND deleted_at IS NULL AND id IN (${fileIds.map(() => '?').join(',')})`, fileIds);
           if (found.length !== fileIds.length) throw new Error('Steckbrief noch nicht übernommen.');
         }
         const result = await conn.query('INSERT INTO updates (title, body, body_html, created_by, updated_by) VALUES (?, ?, ?, ?, ?)', [content.title, content.body, content.bodyHtml, uuid, uuid]);
@@ -446,7 +447,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const content = validText(title, body, bodyHtml);
       if (!['draft_edit', 'published_edit'].includes(mode)) throw new Error('Ungültige Änderung.');
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT title, body, body_html AS bodyHtml, status FROM updates WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT title, body, body_html AS bodyHtml, status FROM updates WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1 || rows[0].status !== (mode === 'draft_edit' ? 'draft' : 'published')) return false;
         if (rows[0].title === content.title && rows[0].body === content.body && rows[0].bodyHtml === content.bodyHtml) return true;
         await conn.query('UPDATE updates SET title = ?, body = ?, body_html = ?, updated_by = ?, updated_at = UTC_TIMESTAMP(6) WHERE id = ?', [content.title, content.body, content.bodyHtml, uuid, id]);
@@ -458,7 +459,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const uuid = validActor(actor);
       const id = validUpdateId(updateId);
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT status, title FROM updates WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT status, title FROM updates WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1 || rows[0].status !== 'draft') return false;
         await conn.query("UPDATE updates SET status = 'published', published_at = UTC_TIMESTAMP(6), published_by = ?, updated_by = ?, updated_at = UTC_TIMESTAMP(6) WHERE id = ?", [uuid, uuid, id]);
         await audit(conn, uuid, 'update.publish', 'update', id, rows[0].title);
@@ -469,19 +470,18 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const uuid = validActor(actor);
       const id = validUpdateId(updateId);
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT id, title FROM updates WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT id, title, status FROM updates WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1) return false;
-        await conn.query('DELETE FROM update_submissions WHERE update_id = ?', [id]);
-        await conn.query('DELETE FROM updates WHERE id = ?', [id]);
+        await conn.query("UPDATE updates SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ?, mail_suppressed = IF(status = 'published', TRUE, mail_suppressed) WHERE id = ?", [uuid, id]);
         await audit(conn, uuid, 'update.delete', 'update', id, rows[0].title);
         return true;
       });
     },
     async listOwnContributions(actor) {
-      return pool.query("SELECT id, title, body, body_html AS bodyHtml, status, DATE_FORMAT(updated_at, '%d.%m.%Y %H:%i') AS updatedAt FROM contributions WHERE owner_uuid = ? ORDER BY updated_at DESC, id DESC LIMIT 100", [validActor(actor)]);
+      return pool.query("SELECT id, title, body, body_html AS bodyHtml, status, DATE_FORMAT(updated_at, '%d.%m.%Y %H:%i') AS updatedAt FROM contributions WHERE owner_uuid = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC LIMIT 100", [validActor(actor)]);
     },
     async listSubmittedContributions() {
-      return pool.query("SELECT c.id, c.title, c.body, c.body_html AS bodyHtml, c.status, p.display_name AS author FROM contributions c JOIN iserv_identities p ON p.user_uuid = c.owner_uuid WHERE c.status = 'submitted' ORDER BY c.created_at DESC, c.id DESC LIMIT 100");
+      return pool.query("SELECT c.id, c.title, c.body, c.body_html AS bodyHtml, c.status, p.display_name AS author FROM contributions c JOIN iserv_identities p ON p.user_uuid = c.owner_uuid WHERE c.status = 'submitted' AND c.deleted_at IS NULL ORDER BY c.created_at DESC, c.id DESC LIMIT 100");
     },
     async listIssueContributions(options = {}) {
       return issueSourcePage(pool, 'contributions', options);
@@ -496,7 +496,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
           return Number(result.insertId);
         }
         const key = validUpdateId(id);
-        const row = await conn.query("SELECT id FROM contributions WHERE id = ? AND owner_uuid = ? AND status = 'submitted' FOR UPDATE", [key, uuid]);
+        const row = await conn.query("SELECT id FROM contributions WHERE id = ? AND owner_uuid = ? AND status = 'submitted' AND deleted_at IS NULL FOR UPDATE", [key, uuid]);
         if (!row.length) return null;
         await conn.query('UPDATE contributions SET title = ?, body = ?, body_html = ?, updated_at = UTC_TIMESTAMP(6) WHERE id = ?', [content.title, content.body, content.bodyHtml, key]);
         await audit(conn, uuid, 'contribution.edit', 'contribution', key, content.title);
@@ -507,9 +507,9 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const uuid = validActor(actor);
       const key = validUpdateId(id);
       return transact(async (conn) => {
-        const row = await conn.query("SELECT title FROM contributions WHERE id = ? AND owner_uuid = ? AND status = 'submitted' FOR UPDATE", [key, uuid]);
+        const row = await conn.query("SELECT title FROM contributions WHERE id = ? AND owner_uuid = ? AND status = 'submitted' AND deleted_at IS NULL FOR UPDATE", [key, uuid]);
         if (!row.length) return false;
-        await conn.query('DELETE FROM contributions WHERE id = ?', [key]);
+        await conn.query('UPDATE contributions SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?', [uuid, key]);
         await audit(conn, uuid, 'contribution.delete', 'contribution', key, row[0].title);
         return true;
       });
@@ -534,7 +534,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const cursor = afterUserUuid === null ? null : validActor(afterUserUuid);
       const cursorFilter = cursor ? ' AND s.user_uuid > ?' : '';
       const dailyFilter = mode === 'daily' ? ' AND u.published_at < ? AND NOT EXISTS (SELECT 1 FROM update_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?)' : '';
-      return pool.query(`SELECT s.user_uuid AS userUuid, p.display_name AS name, p.email, u.id, u.title, u.body, u.body_html AS bodyHtml FROM update_subscriptions s JOIN iserv_identities p ON p.user_uuid = s.user_uuid JOIN updates u ON u.status = 'published' AND u.published_at >= s.changed_at LEFT JOIN update_mail_delivery d ON d.user_uuid = s.user_uuid AND d.update_id = u.id WHERE s.mode = ? AND p.email IS NOT NULL AND LOWER(p.email) <> 'staff@school.example' AND d.update_id IS NULL${cursorFilter}${dailyFilter} ORDER BY s.user_uuid, u.published_at, u.id LIMIT ${limit}`, [mode, ...(cursor ? [cursor] : []), ...(mode === 'daily' ? [cutoffUtc, cutoffUtc] : [])]);
+      return pool.query(`SELECT s.user_uuid AS userUuid, p.display_name AS name, p.email, u.id, u.title, u.body, u.body_html AS bodyHtml FROM update_subscriptions s JOIN iserv_identities p ON p.user_uuid = s.user_uuid JOIN updates u ON u.status = 'published' AND u.deleted_at IS NULL AND u.mail_suppressed = FALSE AND u.published_at >= s.changed_at LEFT JOIN update_mail_delivery d ON d.user_uuid = s.user_uuid AND d.update_id = u.id WHERE s.mode = ? AND p.email IS NOT NULL AND LOWER(p.email) <> 'staff@school.example' AND d.update_id IS NULL${cursorFilter}${dailyFilter} ORDER BY s.user_uuid, u.published_at, u.id LIMIT ${limit}`, [mode, ...(cursor ? [cursor] : []), ...(mode === 'daily' ? [cutoffUtc, cutoffUtc] : [])]);
     },
     async claimUpdateMail(actor, updateIds, mode, cutoffUtc = null) {
       const uuid = validActor(actor);
@@ -544,7 +544,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (new Set(ids).size !== ids.length) throw new Error('Doppelte Mailauswahl.');
       return transact(async (conn) => {
         const dailyFilter = mode === 'daily' ? ' AND u.published_at < ? AND NOT EXISTS (SELECT 1 FROM update_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?)' : '';
-        const selected = await conn.query(`SELECT u.id, p.display_name AS recipientName FROM updates u JOIN update_subscriptions s ON s.user_uuid = ? AND s.mode = ? AND u.published_at >= s.changed_at JOIN iserv_identities p ON p.user_uuid = s.user_uuid LEFT JOIN update_mail_delivery d ON d.user_uuid = ? AND d.update_id = u.id WHERE u.status = 'published' AND d.update_id IS NULL AND u.id IN (${ids.map(() => '?').join(',')})${dailyFilter} FOR UPDATE`, [uuid, mode, uuid, ...ids, ...(mode === 'daily' ? [cutoffUtc, cutoffUtc] : [])]);
+        const selected = await conn.query(`SELECT u.id, p.display_name AS recipientName FROM updates u JOIN update_subscriptions s ON s.user_uuid = ? AND s.mode = ? AND u.published_at >= s.changed_at JOIN iserv_identities p ON p.user_uuid = s.user_uuid LEFT JOIN update_mail_delivery d ON d.user_uuid = ? AND d.update_id = u.id WHERE u.status = 'published' AND u.deleted_at IS NULL AND u.mail_suppressed = FALSE AND d.update_id IS NULL AND u.id IN (${ids.map(() => '?').join(',')})${dailyFilter} FOR UPDATE`, [uuid, mode, uuid, ...ids, ...(mode === 'daily' ? [cutoffUtc, cutoffUtc] : [])]);
         if (selected.length !== ids.length) return false;
         for (const id of ids) await conn.query("INSERT INTO update_mail_delivery (user_uuid, update_id, status) VALUES (?, ?, 'sending')", [uuid, id]);
         await writeAudit(conn, null, 'update.mail_start', 'subscription', uuid, selected[0].recipientName || null);
@@ -622,13 +622,13 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (typeof query !== 'string' || query.trim().length < 2 || query.trim().length > 100) throw new Error('Ungültige Suche.');
       const term = query.trim();
       const [updates, issues] = await Promise.all([
-        pool.query("SELECT id, title, LEFT(body, 240) AS excerpt FROM updates WHERE status = 'published' AND (LOCATE(?, title) > 0 OR LOCATE(?, body) > 0) ORDER BY published_at DESC, id DESC LIMIT 30", [term, term]),
-        pool.query("SELECT i.number, i.title, LEFT(i.body, 240) AS excerpt FROM issues i WHERE i.status = 'published' AND (LOCATE(?, i.title) > 0 OR LOCATE(?, i.body) > 0 OR EXISTS(SELECT 1 FROM issue_updates iu WHERE iu.issue_id = i.id AND (LOCATE(?, iu.snapshot_title) > 0 OR LOCATE(?, iu.snapshot_body) > 0)) OR EXISTS(SELECT 1 FROM issue_contributions ic WHERE ic.issue_id = i.id AND (LOCATE(?, ic.snapshot_title) > 0 OR LOCATE(?, ic.snapshot_body) > 0 OR LOCATE(?, ic.snapshot_author) > 0))) ORDER BY i.number DESC LIMIT 30", [term, term, term, term, term, term, term]),
+        pool.query("SELECT id, title, LEFT(body, 240) AS excerpt FROM updates WHERE status = 'published' AND deleted_at IS NULL AND (LOCATE(?, title) > 0 OR LOCATE(?, body) > 0) ORDER BY published_at DESC, id DESC LIMIT 30", [term, term]),
+        pool.query("SELECT i.number, i.title, LEFT(i.body, 240) AS excerpt FROM issues i WHERE i.status = 'published' AND i.deleted_at IS NULL AND (LOCATE(?, i.title) > 0 OR LOCATE(?, i.body) > 0 OR EXISTS(SELECT 1 FROM issue_updates iu WHERE iu.issue_id = i.id AND (LOCATE(?, iu.snapshot_title) > 0 OR LOCATE(?, iu.snapshot_body) > 0)) OR EXISTS(SELECT 1 FROM issue_contributions ic WHERE ic.issue_id = i.id AND (LOCATE(?, ic.snapshot_title) > 0 OR LOCATE(?, ic.snapshot_body) > 0 OR LOCATE(?, ic.snapshot_author) > 0))) ORDER BY i.number DESC LIMIT 30", [term, term, term, term, term, term, term]),
       ]);
       return { updates, issues };
     },
     async hasIssueDrafts() {
-      const rows = await pool.query("SELECT 1 AS present FROM issues WHERE status = 'draft' LIMIT 1");
+      const rows = await pool.query("SELECT 1 AS present FROM issues WHERE status = 'draft' AND deleted_at IS NULL LIMIT 1");
       return rows.length > 0;
     },
     async getPublishedIssue(number) {
@@ -637,14 +637,14 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       try {
         await conn.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         await conn.query('START TRANSACTION READ ONLY, WITH CONSISTENT SNAPSHOT');
-        const rows = await conn.query("SELECT number, title, body, body_html AS bodyHtml, school_year AS schoolYear, period, DATE_FORMAT(published_at, '%d.%m.%Y') AS publishedAt FROM issues WHERE status = 'published' AND number = ?", [n]);
+        const rows = await conn.query("SELECT number, title, body, body_html AS bodyHtml, school_year AS schoolYear, period, DATE_FORMAT(published_at, '%d.%m.%Y') AS publishedAt FROM issues WHERE status = 'published' AND deleted_at IS NULL AND number = ?", [n]);
         if (rows.length !== 1) {
           await conn.commit();
           return null;
         }
-        const updates = await conn.query('SELECT iu.id AS snapshotId, iu.update_id AS updateId, iu.snapshot_title AS title, iu.snapshot_body AS body, iu.snapshot_body_html AS bodyHtml FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE i.number = ? AND i.status = ? ORDER BY iu.position', [n, 'published']);
-        const contributions = await conn.query("SELECT ic.contribution_id AS contributionId, ic.snapshot_title AS title, ic.snapshot_body AS body, ic.snapshot_body_html AS bodyHtml, ic.snapshot_author AS author FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE i.number = ? AND i.status = 'published' ORDER BY ic.position", [n]);
-        const attachments = await conn.query("SELECT s.id, s.title, s.media_type AS mediaType, s.stored_name AS storedName, p.display_name AS ownerName FROM issue_submissions isu JOIN submissions s ON s.id = isu.submission_id LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid JOIN issues i ON i.id = isu.issue_id WHERE i.number = ? AND i.status = 'published' ORDER BY isu.position", [n]);
+        const updates = await conn.query('SELECT iu.id AS snapshotId, iu.update_id AS updateId, iu.snapshot_title AS title, iu.snapshot_body AS body, iu.snapshot_body_html AS bodyHtml FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE i.number = ? AND i.status = ? AND i.deleted_at IS NULL ORDER BY iu.position', [n, 'published']);
+        const contributions = await conn.query("SELECT ic.contribution_id AS contributionId, ic.snapshot_title AS title, ic.snapshot_body AS body, ic.snapshot_body_html AS bodyHtml, ic.snapshot_author AS author FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE i.number = ? AND i.status = 'published' AND i.deleted_at IS NULL ORDER BY ic.position", [n]);
+        const attachments = await conn.query("SELECT s.id, s.title, s.media_type AS mediaType, s.stored_name AS storedName, p.display_name AS ownerName FROM issue_submissions isu JOIN submissions s ON s.id = isu.submission_id LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid JOIN issues i ON i.id = isu.issue_id WHERE i.number = ? AND i.status = 'published' AND i.deleted_at IS NULL ORDER BY isu.position", [n]);
         await conn.commit();
         return { ...rows[0], updates, contributions, attachments };
       } catch (error) {
@@ -655,14 +655,14 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       }
     },
     async issueMailStatus(number) {
-      const rows = await pool.query("SELECT im.status FROM issue_mail_delivery im JOIN issues i ON i.id = im.issue_id WHERE i.number = ? AND i.status = 'published'", [validUpdateId(number)]);
+      const rows = await pool.query("SELECT im.status FROM issue_mail_delivery im JOIN issues i ON i.id = im.issue_id WHERE i.number = ? AND i.status = 'published' AND i.deleted_at IS NULL", [validUpdateId(number)]);
       return rows[0]?.status || null;
     },
     async startIssueMail(actor, number) {
       const uuid = validActor(actor);
       const n = validUpdateId(number);
       return transact(async (conn) => {
-        const rows = await conn.query("SELECT id FROM issues WHERE number = ? AND status = 'published' FOR UPDATE", [n]);
+        const rows = await conn.query("SELECT id FROM issues WHERE number = ? AND status = 'published' AND deleted_at IS NULL FOR UPDATE", [n]);
         if (rows.length !== 1) return false;
         const existing = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [rows[0].id]);
         if (existing.length) return false;
@@ -682,7 +682,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
     },
     async markIssueUpdatesMailed(number) {
       const n = validUpdateId(number);
-      await pool.query("INSERT IGNORE INTO update_mail_delivery (user_uuid, update_id, status, requested_at, finished_at) SELECT s.user_uuid, iu.update_id, 'sent', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6) FROM issues i JOIN issue_updates iu ON iu.issue_id = i.id JOIN updates u ON u.id = iu.update_id JOIN update_subscriptions s ON s.mode IN ('instant', 'daily', 'weekly') AND u.published_at >= s.changed_at WHERE i.number = ? AND i.status = 'published' AND iu.update_id IS NOT NULL", [n]);
+      await pool.query("INSERT IGNORE INTO update_mail_delivery (user_uuid, update_id, status, requested_at, finished_at) SELECT s.user_uuid, iu.update_id, 'sent', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6) FROM issues i JOIN issue_updates iu ON iu.issue_id = i.id JOIN updates u ON u.id = iu.update_id JOIN update_subscriptions s ON s.mode IN ('instant', 'daily', 'weekly') AND u.published_at >= s.changed_at WHERE i.number = ? AND i.status = 'published' AND i.deleted_at IS NULL AND u.deleted_at IS NULL AND iu.update_id IS NOT NULL", [n]);
     },
     async createIssueDraft(actor, title, body, schoolYear, period, updateIds, bodyHtml = null) {
       const uuid = validActor(actor);
@@ -690,7 +690,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (!content.body && !content.ids.length) throw new Error('Ausgabe ohne Inhalt.');
       return transact(async (conn) => {
         if (content.ids.length) {
-          const found = await conn.query(`SELECT id FROM updates WHERE status = 'published' AND id IN (${content.ids.map(() => '?').join(',')})`, content.ids);
+          const found = await conn.query(`SELECT id FROM updates WHERE status = 'published' AND deleted_at IS NULL AND id IN (${content.ids.map(() => '?').join(',')})`, content.ids);
           if (found.length !== content.ids.length) throw new Error('Ein gewähltes Update ist nicht veröffentlicht.');
         }
         const result = await conn.query('INSERT INTO issues (title, body, body_html, school_year, period, created_by) VALUES (?, ?, ?, ?, ?, ?)', [content.title, content.body, content.bodyHtml, content.schoolYear, content.period, uuid]);
@@ -704,11 +704,11 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const uuid = validActor(actor);
       const id = validUpdateId(issueId);
       return transact(async (conn) => {
-        const issues = await conn.query('SELECT status, title FROM issues WHERE id = ? FOR UPDATE', [id]);
+        const issues = await conn.query('SELECT status, title FROM issues WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (issues.length !== 1 || issues[0].status !== 'draft') return null;
         const number = await reserveIssueNumber(conn);
-        const links = await conn.query('SELECT iu.update_id AS updateId, u.title, u.body, u.body_html AS bodyHtml, u.status FROM issue_updates iu JOIN updates u ON u.id = iu.update_id WHERE iu.issue_id = ? ORDER BY iu.position FOR UPDATE', [id]);
-        if (links.some((row) => row.status !== 'published')) throw new Error('Ein gewähltes Update ist nicht mehr veröffentlicht.');
+        const links = await conn.query('SELECT iu.update_id AS updateId, u.title, u.body, u.body_html AS bodyHtml, u.status, u.deleted_at AS deletedAt FROM issue_updates iu LEFT JOIN updates u ON u.id = iu.update_id WHERE iu.issue_id = ? ORDER BY iu.position FOR UPDATE', [id]);
+        if (links.some((row) => row.status !== 'published' || row.deletedAt !== null)) throw new Error('Ein gewähltes Update ist nicht mehr veröffentlicht.');
         for (const item of links) await conn.query('UPDATE issue_updates SET snapshot_title = ?, snapshot_body = ?, snapshot_body_html = ? WHERE issue_id = ? AND update_id = ?', [item.title, item.body, item.bodyHtml, id, item.updateId]);
         const attachments = await conn.query('SELECT us.submission_id AS submissionId FROM issue_updates iu JOIN update_submissions us ON us.update_id = iu.update_id WHERE iu.issue_id = ? ORDER BY iu.position, us.position', [id]);
         const seen = new Set();
@@ -728,7 +728,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (!content.body && !content.ids.length && !content.files.length && !content.articles.length) throw new Error('Ausgabe ohne Inhalt.');
       return transact(async (conn) => {
         const number = await reserveIssueNumber(conn);
-        const links = content.ids.length ? await conn.query(`SELECT id, title, body, body_html AS bodyHtml, status FROM updates WHERE id IN (${content.ids.map(() => '?').join(',')}) FOR UPDATE`, content.ids) : [];
+        const links = content.ids.length ? await conn.query(`SELECT id, title, body, body_html AS bodyHtml, status FROM updates WHERE deleted_at IS NULL AND id IN (${content.ids.map(() => '?').join(',')}) FOR UPDATE`, content.ids) : [];
         if (links.length !== content.ids.length || links.some((row) => row.status !== 'published')) throw new Error('Ein gewähltes Update ist nicht veröffentlicht.');
         await checkedSubmissions(conn, content.files);
         const byId = new Map(links.map((row) => [row.id, row]));
@@ -753,13 +753,13 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const retained = keepSnapshotIds.map(validUpdateId);
       if (new Set(retained).size !== retained.length || (!content.body && !content.ids.length && !content.files.length && !retained.length && !content.articles.length)) throw new Error('Ausgabe ohne Inhalt oder doppelte Auswahl.');
       return transact(async (conn) => {
-        const rows = await conn.query("SELECT id FROM issues WHERE number = ? AND status = 'published' FOR UPDATE", [n]);
+        const rows = await conn.query("SELECT id FROM issues WHERE number = ? AND status = 'published' AND deleted_at IS NULL FOR UPDATE", [n]);
         if (rows.length !== 1) return false;
         const issueId = rows[0].id;
         const oldLinks = await conn.query('SELECT id, update_id AS updateId, snapshot_title AS title, snapshot_body AS body, snapshot_body_html AS bodyHtml FROM issue_updates WHERE issue_id = ? ORDER BY position FOR UPDATE', [issueId]);
         const orphaned = new Map(oldLinks.filter((row) => row.updateId === null).map((row) => [Number(row.id), row]));
         if (retained.some((id) => !orphaned.has(id))) throw new Error('Ungültige gespeicherte Beiträge.');
-        const live = content.ids.length ? await conn.query(`SELECT id, title, body, body_html AS bodyHtml FROM updates WHERE status = 'published' AND id IN (${content.ids.map(() => '?').join(',')}) FOR UPDATE`, content.ids) : [];
+        const live = content.ids.length ? await conn.query(`SELECT id, title, body, body_html AS bodyHtml FROM updates WHERE status = 'published' AND deleted_at IS NULL AND id IN (${content.ids.map(() => '?').join(',')}) FOR UPDATE`, content.ids) : [];
         if (live.length !== content.ids.length) throw new Error('Ein gewähltes Update ist nicht veröffentlicht.');
         await checkedSubmissions(conn, content.files);
         const byId = new Map(live.map((row) => [Number(row.id), row]));
@@ -790,18 +790,12 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const n = validUpdateId(number);
       return transact(async (conn) => {
         await conn.query('SELECT next_number FROM issue_sequence WHERE id = 1 FOR UPDATE');
-        const rows = await conn.query('SELECT id, title FROM issues WHERE number = ? FOR UPDATE', [n]);
+        const rows = await conn.query('SELECT id, title FROM issues WHERE number = ? AND deleted_at IS NULL FOR UPDATE', [n]);
         if (rows.length !== 1) return false;
         const id = rows[0].id;
         const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [id]);
         if (delivery.length) throw new Error('Eine Ausgabe mit begonnenem Mailversand kann nicht gelöscht werden.');
-        await conn.query('DELETE FROM issue_submissions WHERE issue_id = ?', [id]);
-        await conn.query('DELETE FROM issue_updates WHERE issue_id = ?', [id]);
-        const oldContributions = await conn.query('SELECT contribution_id AS id FROM issue_contributions WHERE issue_id = ? FOR UPDATE', [id]);
-        await conn.query('DELETE FROM issue_contributions WHERE issue_id = ?', [id]);
-        await releaseRemovedContributions(conn, oldContributions.map((row) => Number(row.id)).filter(Boolean));
-        await conn.query('DELETE FROM issues WHERE id = ?', [id]);
-        await conn.query('UPDATE issue_sequence SET next_number = LEAST(next_number, ?) WHERE id = 1', [n]);
+        await conn.query('UPDATE issues SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?', [uuid, id]);
         await audit(conn, uuid, 'issue.delete', 'issue', n, rows[0].title);
         return true;
       });
@@ -810,13 +804,10 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const uuid = validActor(actor);
       const id = validUpdateId(issueId);
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT title, status FROM issues WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT title, status FROM issues WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1 || rows[0].status !== 'draft') return false;
-        await conn.query('DELETE FROM issue_submissions WHERE issue_id = ?', [id]);
-        await conn.query('DELETE FROM issue_updates WHERE issue_id = ?', [id]);
-        await conn.query('DELETE FROM issue_contributions WHERE issue_id = ?', [id]);
-        await conn.query('DELETE FROM issues WHERE id = ?', [id]);
-        await audit(conn, uuid, 'issue.delete', 'issue', id, rows[0].title);
+        await conn.query('UPDATE issues SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?', [uuid, id]);
+        await audit(conn, uuid, 'issue.draft_delete', 'issue', id, rows[0].title);
         return true;
       });
     },
@@ -836,7 +827,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
     async isEditorImagePublished(storedName) {
       if (typeof storedName !== 'string' || !UUID.test(storedName)) return false;
       const marker = `src="/bbsinfo/editor-images/${storedName.toLowerCase()}"`;
-      const rows = await pool.query("SELECT (EXISTS(SELECT 1 FROM updates WHERE status = 'published' AND LOCATE(?, body_html) > 0) OR EXISTS(SELECT 1 FROM issues WHERE status = 'published' AND LOCATE(?, body_html) > 0) OR EXISTS(SELECT 1 FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE i.status = 'published' AND LOCATE(?, iu.snapshot_body_html) > 0) OR EXISTS(SELECT 1 FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE i.status = 'published' AND LOCATE(?, ic.snapshot_body_html) > 0)) AS allowed", [marker, marker, marker, marker]);
+      const rows = await pool.query("SELECT (EXISTS(SELECT 1 FROM updates WHERE status = 'published' AND deleted_at IS NULL AND LOCATE(?, body_html) > 0) OR EXISTS(SELECT 1 FROM issues WHERE status = 'published' AND deleted_at IS NULL AND LOCATE(?, body_html) > 0) OR EXISTS(SELECT 1 FROM issue_updates iu JOIN issues i ON i.id = iu.issue_id WHERE i.status = 'published' AND i.deleted_at IS NULL AND LOCATE(?, iu.snapshot_body_html) > 0) OR EXISTS(SELECT 1 FROM issue_contributions ic JOIN issues i ON i.id = ic.issue_id WHERE i.status = 'published' AND i.deleted_at IS NULL AND LOCATE(?, ic.snapshot_body_html) > 0)) AS allowed", [marker, marker, marker, marker]);
       return !!rows[0]?.allowed;
     },
     async createSubmission(actor, title, note, storedName, mediaType, byteSize) {
@@ -850,31 +841,31 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       });
     },
     async listOwnSubmissions(actor) {
-      return pool.query("SELECT id, title, note, media_type AS mediaType, byte_size AS byteSize, status, DATE_FORMAT(created_at, '%d.%m.%Y %H:%i') AS createdAt FROM submissions WHERE owner_uuid = ? ORDER BY id DESC LIMIT 100", [validActor(actor)]);
+      return pool.query("SELECT id, title, note, media_type AS mediaType, byte_size AS byteSize, status, DATE_FORMAT(created_at, '%d.%m.%Y %H:%i') AS createdAt FROM submissions WHERE owner_uuid = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 100", [validActor(actor)]);
     },
     async listAllSubmissions() {
-      return pool.query("SELECT s.id, s.owner_uuid AS ownerUuid, p.display_name AS ownerName, s.title, s.note, s.media_type AS mediaType, s.byte_size AS byteSize, s.status, DATE_FORMAT(s.created_at, '%d.%m.%Y %H:%i') AS createdAt FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid ORDER BY s.id DESC LIMIT 100");
+      return pool.query("SELECT s.id, s.owner_uuid AS ownerUuid, p.display_name AS ownerName, s.title, s.note, s.media_type AS mediaType, s.byte_size AS byteSize, s.status, DATE_FORMAT(s.created_at, '%d.%m.%Y %H:%i') AS createdAt FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 100");
     },
     async listTakenOverSubmissions() {
-      return pool.query("SELECT s.id, s.title, s.owner_uuid AS ownerUuid, p.display_name AS ownerName FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE s.status = 'taken_over' ORDER BY s.id DESC LIMIT 100");
+      return pool.query("SELECT s.id, s.title, s.owner_uuid AS ownerUuid, p.display_name AS ownerName FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE s.status = 'taken_over' AND s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 100");
     },
     async listIssueSubmissions(options = {}) {
       return issueSourcePage(pool, 'submissions', options);
     },
     async getSubmission(submissionId) {
-      const rows = await pool.query('SELECT id, owner_uuid AS ownerUuid, title, note, stored_name AS storedName, media_type AS mediaType, byte_size AS byteSize, status FROM submissions WHERE id = ?', [validUpdateId(submissionId)]);
+      const rows = await pool.query('SELECT id, owner_uuid AS ownerUuid, title, note, stored_name AS storedName, media_type AS mediaType, byte_size AS byteSize, status FROM submissions WHERE id = ? AND deleted_at IS NULL', [validUpdateId(submissionId)]);
       return rows.length === 1 ? rows[0] : null;
     },
     async isPublishedSubmission(submissionId) {
       const id = validUpdateId(submissionId);
-      const rows = await pool.query("SELECT (EXISTS(SELECT 1 FROM update_submissions us JOIN updates u ON u.id = us.update_id WHERE us.submission_id = ? AND u.status = 'published') OR EXISTS(SELECT 1 FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = ? AND i.status = 'published')) AS allowed", [id, id]);
+      const rows = await pool.query("SELECT (EXISTS(SELECT 1 FROM update_submissions us JOIN updates u ON u.id = us.update_id WHERE us.submission_id = ? AND u.status = 'published' AND u.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM issue_submissions isu JOIN issues i ON i.id = isu.issue_id WHERE isu.submission_id = ? AND i.status = 'published' AND i.deleted_at IS NULL)) AS allowed", [id, id]);
       return !!rows[0]?.allowed;
     },
     async takeOverSubmission(actor, submissionId) {
       const uuid = validActor(actor);
       const id = validUpdateId(submissionId);
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT status FROM submissions WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT status FROM submissions WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1 || rows[0].status !== 'submitted') return false;
         await conn.query("UPDATE submissions SET status = 'taken_over', taken_at = UTC_TIMESTAMP(6), taken_by = ? WHERE id = ?", [uuid, id]);
         await audit(conn, uuid, 'submission.take_over', 'submission', id);
@@ -886,7 +877,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const id = validUpdateId(submissionId);
       const submission = validSubmission(title, note, storedName, mediaType, byteSize);
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT owner_uuid AS ownerUuid, status, stored_name AS storedName FROM submissions WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT owner_uuid AS ownerUuid, status, stored_name AS storedName FROM submissions WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1 || rows[0].ownerUuid !== uuid || rows[0].status !== 'submitted') return null;
         await conn.query('UPDATE submissions SET title = ?, note = ?, stored_name = ?, media_type = ?, byte_size = ? WHERE id = ?', [submission.title, submission.note, submission.storedName, submission.mediaType, submission.byteSize, id]);
         await audit(conn, uuid, 'submission.replace', 'submission', id);
@@ -897,12 +888,76 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const uuid = validActor(actor);
       const id = validUpdateId(submissionId);
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT owner_uuid AS ownerUuid, status, title, stored_name AS storedName FROM submissions WHERE id = ? FOR UPDATE', [id]);
+        const rows = await conn.query('SELECT owner_uuid AS ownerUuid, status, title, stored_name AS storedName FROM submissions WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id]);
         if (rows.length !== 1 || rows[0].ownerUuid !== uuid || rows[0].status !== 'submitted') return null;
-        await conn.query('DELETE FROM submissions WHERE id = ?', [id]);
+        await conn.query('UPDATE submissions SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?', [uuid, id]);
         await audit(conn, uuid, 'submission.delete', 'submission', id, rows[0].title);
         return rows[0].storedName;
       });
+    },
+    async listTrash(actor, editor = false, page = 1) {
+      const uuid = validActor(actor);
+      if (typeof editor !== 'boolean' || !Number.isSafeInteger(page) || page < 1 || page > 2000) throw new Error('Ungültige Papierkorbansicht.');
+      const limit = 51;
+      const offset = (page - 1) * 50;
+      const [updates, issues, contributions, submissions] = await Promise.all([
+        editor ? pool.query("SELECT id, title, status, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM updates WHERE deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
+        editor ? pool.query("SELECT id, number, title, status, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM issues WHERE deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
+        pool.query("SELECT id, title, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM contributions WHERE owner_uuid = ? AND status = 'submitted' AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [uuid, limit, offset]),
+        pool.query("SELECT id, title, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM submissions WHERE owner_uuid = ? AND status = 'submitted' AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [uuid, limit, offset]),
+      ]);
+      return { updates: updates.slice(0, 50), issues: issues.slice(0, 50), contributions: contributions.slice(0, 50), submissions: submissions.slice(0, 50), page, hasNext: [updates, issues, contributions, submissions].some((rows) => rows.length > 50) };
+    },
+    async restoreTrash(actor, kind, itemId, editor = false) {
+      const uuid = validActor(actor);
+      const id = validUpdateId(itemId);
+      const sources = { update: 'updates', issue: 'issues', contribution: 'contributions', submission: 'submissions' };
+      if (!Object.hasOwn(sources, kind) || typeof editor !== 'boolean' || (['update', 'issue'].includes(kind) && !editor)) throw new Error('Ungültiger Papierkorbeintrag.');
+      const table = sources[kind];
+      return transact(async (conn) => {
+        const owner = ['update', 'issue'].includes(kind) ? '' : " AND owner_uuid = ? AND status = 'submitted'";
+        const params = owner ? [id, uuid] : [id];
+        const rows = await conn.query(`SELECT title${kind === 'issue' ? ', number, status' : ''} FROM ${table} WHERE id = ?${owner} AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE`, params);
+        if (rows.length !== 1) return false;
+        await conn.query(`UPDATE ${table} SET deleted_at = NULL, deleted_by = NULL WHERE id = ?`, [id]);
+        const action = kind === 'issue' && rows[0].status === 'draft' ? 'issue.draft_restore' : `${kind}.restore`;
+        await audit(conn, uuid, action, kind, kind === 'issue' ? rows[0].number || id : id, rows[0].title);
+        return true;
+      });
+    },
+    async pruneTrash(removeFile) {
+      if (typeof removeFile !== 'function') throw new Error('Dateibereinigung fehlt.');
+      const sources = [
+        { kind: 'issue', table: 'issues' },
+        { kind: 'update', table: 'updates' },
+        { kind: 'contribution', table: 'contributions' },
+        { kind: 'submission', table: 'submissions' },
+      ];
+      for (const { kind, table } of sources) {
+        const expired = await pool.query(`SELECT id, title${kind === 'submission' ? ', stored_name AS storedName' : ''} FROM ${table} WHERE deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at, id LIMIT 100`);
+        for (const item of expired) {
+          if (kind === 'submission') await removeFile(item.storedName);
+          await transact(async (conn) => {
+            if (kind === 'issue') await conn.query('SELECT next_number FROM issue_sequence WHERE id = 1 FOR UPDATE');
+            const rows = await conn.query(`SELECT title${kind === 'issue' ? ', number, status' : ''} FROM ${table} WHERE id = ? AND deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE`, [item.id]);
+            if (rows.length !== 1) return;
+            if (kind === 'issue') {
+              const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [item.id]);
+              if (delivery.length) throw new Error('Eine angekündigte Ausgabe darf nicht entfernt werden.');
+              await conn.query('DELETE FROM issue_submissions WHERE issue_id = ?', [item.id]);
+              await conn.query('DELETE FROM issue_updates WHERE issue_id = ?', [item.id]);
+              const oldContributions = await conn.query('SELECT contribution_id AS id FROM issue_contributions WHERE issue_id = ? FOR UPDATE', [item.id]);
+              await conn.query('DELETE FROM issue_contributions WHERE issue_id = ?', [item.id]);
+              await releaseRemovedContributions(conn, oldContributions.map((row) => Number(row.id)).filter(Boolean));
+            }
+            if (kind === 'update') await conn.query('DELETE FROM update_submissions WHERE update_id = ?', [item.id]);
+            await conn.query(`DELETE FROM ${table} WHERE id = ?`, [item.id]);
+            if (kind === 'issue' && rows[0].number) await conn.query('UPDATE issue_sequence SET next_number = LEAST(next_number, ?) WHERE id = 1', [rows[0].number]);
+            const action = kind === 'issue' && rows[0].status === 'draft' ? 'issue.draft_purge' : `${kind}.purge`;
+            await writeAudit(conn, null, action, kind, kind === 'issue' ? rows[0].number || item.id : item.id, rows[0].title);
+          }, true);
+        }
+      }
     },
     async close() { await pool.end(); },
   };

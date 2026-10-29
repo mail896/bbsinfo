@@ -103,11 +103,24 @@ function fakeCmsStore() {
   const templates = [];
   const editorGrants = new Map();
   const contributions = [];
+  const trash = { updates: [], issues: [], contributions: [], submissions: [] };
   const issueMail = new Map();
   const editorImages = new Map();
   let appSettings = { ...defaultAppSettings };
   return {
     events,
+    async listTrash(actor, editor = false) { return { updates: editor ? trash.updates : [], issues: editor ? trash.issues : [], contributions: trash.contributions.filter((row) => row.ownerUuid === actor), submissions: trash.submissions.filter((row) => row.ownerUuid === actor) }; },
+    async restoreTrash(actor, kind, id, editor = false) {
+      const mapping = { update: ['updates', published], issue: ['issues', issues], contribution: ['contributions', contributions], submission: ['submissions', submissions] }[kind];
+      if (!mapping || (['update', 'issue'].includes(kind) && !editor)) return false;
+      const [name, active] = mapping;
+      const index = trash[name].findIndex((row) => row.id === Number(id) && (['update', 'issue'].includes(kind) || row.ownerUuid === actor));
+      if (index < 0) return false;
+      const row = trash[name].splice(index, 1)[0];
+      (kind === 'update' && row.status === 'draft' ? drafts : kind === 'issue' && row.status === 'draft' ? issueDrafts : active).push(row);
+      events.push({ actor, action: `${kind}.restore` });
+      return true;
+    },
     async getAppSettings() { return appSettings; },
     async saveAppSettings(actor, input) { appSettings = input; events.push({ actor, action: 'settings.edit' }); },
     async rememberIdentity(identity) { identities.set(identity.uuid, identity.name); },
@@ -141,7 +154,7 @@ function fakeCmsStore() {
     async listSubmittedContributions() { return contributions.filter((item) => item.status === 'submitted').map((item) => ({ ...item, author: identities.get(item.ownerUuid) })); },
     async listIssueContributions() { return contributions.filter((item) => item.status === 'submitted' || issues.some((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id)))).map((item) => ({ ...item, author: identities.get(item.ownerUuid), usedInIssues: issues.filter((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
     async saveContribution(actor, id, title, body, bodyHtml) { const row = id === null ? { id: contributions.length + 1, ownerUuid: actor, status: 'submitted' } : contributions.find((item) => item.id === Number(id) && item.ownerUuid === actor && item.status === 'submitted'); if (!row) return null; Object.assign(row, { title, body, bodyHtml }); if (id === null) contributions.push(row); return row.id; },
-    async deleteContribution(actor, id) { const index = contributions.findIndex((item) => item.id === Number(id) && item.ownerUuid === actor && item.status === 'submitted'); if (index < 0) return false; contributions.splice(index, 1); return true; },
+    async deleteContribution(actor, id) { const index = contributions.findIndex((item) => item.id === Number(id) && item.ownerUuid === actor && item.status === 'submitted'); if (index < 0) return false; trash.contributions.push({ ...contributions.splice(index, 1)[0], deletedAtUtc: '2026-10-29 10:00:00' }); return true; },
     async listAudit(before, limit, filters = {}) { return events.map((event, id) => ({ id, occurredAt: '2026-10-26 12:00:00', actorUuid: event.actor, actorName: identities.get(event.actor), action: event.action, objectType: event.type, objectId: event.id, objectTitle: event.title || (event.type === 'update' ? [...drafts, ...published].find((row) => row.id === event.id)?.title : null) })).filter((event) => (!filters.actor || event.actorUuid === filters.actor || event.actorName?.toLowerCase().includes(filters.actor.toLowerCase())) && (!filters.action || event.action === filters.action)); },
     async listAuditPage(page = 1, filters = {}, through = null) { const rows = (await this.listAudit(null, 1000, filters)).filter((row) => through === null || row.id <= Number(through)).reverse(); return { events: rows.slice((page - 1) * 50, page * 50), hasMore: rows.length > page * 50, page, pageCount: Math.max(1, Math.ceil(rows.length / 50)), through: through || String(rows[0]?.id || '') }; },
     async listUsageStats(days = 30) { return { days, daily: [{ day: '26.10.2026', action: 'session.login', eventCount: events.filter((event) => event.action === 'session.login').length }], topContent: [], searchTerms: [], searchPeople: [], activeUsers: 1, subscriptions: [...subscriptions.values()].filter((mode) => mode !== 'off').length }; },
@@ -157,9 +170,9 @@ function fakeCmsStore() {
     async publishIssue(actor, id) { const index = issueDrafts.findIndex((issue) => issue.id === Number(id)); if (index < 0) return null; const draft = issueDrafts.splice(index, 1)[0]; const updates = draft.updateIds.map((updateId, position) => { const row = published.find((item) => item.id === Number(updateId)); return { snapshotId: position + 1, updateId: row.id, title: row.title, body: row.body, bodyHtml: row.bodyHtml, attachments: [...(row.attachments || [])] }; }); const number = 93 + issues.length; issues.push({ ...draft, number, publishedAt: '26.10.2026', updates, attachments: updates.flatMap((item) => item.attachments || []) }); events.push({ actor, action: 'issue.publish' }); return number; },
     async createAndPublishIssue(actor, title, body, schoolYear, period, updateIds, bodyHtml = null, submissionIds = [], contributionIds = []) { const id = await this.createIssueDraft(actor, title, body, schoolYear, period, updateIds, bodyHtml); const number = await this.publishIssue(actor, id); const issue = issues.find((item) => item.number === number); issue.attachments.push(...submissionIds.map((fileId) => submissions.find((item) => item.id === Number(fileId)))); issue.contributions = contributionIds.map((key) => { const row = contributions.find((item) => item.id === Number(key)); row.status = 'taken_over'; return { contributionId: row.id, title: row.title, body: row.body, bodyHtml: row.bodyHtml, author: identities.get(row.ownerUuid) }; }); return number; },
     async editPublishedIssue(actor, number, title, body, period, updateIds, submissionIds, keepSnapshotIds = [], bodyHtml = null, contributionIds = []) { const issue = issues.find((item) => item.number === Number(number)); if (!issue) return false; Object.assign(issue, { title, body, period, bodyHtml }); const orphans = issue.updates.filter((item) => !item.updateId && keepSnapshotIds.includes(String(item.snapshotId))); issue.updates = [...updateIds.map((id, position) => { const row = published.find((item) => item.id === Number(id)); return { snapshotId: position + 1, updateId: row.id, title: row.title, body: row.body, bodyHtml: row.bodyHtml }; }), ...orphans]; issue.attachments = submissionIds.map((id) => submissions.find((item) => item.id === Number(id))); issue.contributions = contributionIds.map((key) => { const row = contributions.find((item) => item.id === Number(key)); row.status = 'taken_over'; return { contributionId: row.id, title: row.title, body: row.body, bodyHtml: row.bodyHtml, author: identities.get(row.ownerUuid) }; }); events.push({ actor, action: 'issue.edit', type: 'issue', id: Number(number) }); return true; },
-    async deleteUpdate(actor, id) { const rows = [...drafts, ...published]; if (!rows.some((row) => row.id === Number(id))) return false; for (const list of [drafts, published]) { const index = list.findIndex((row) => row.id === Number(id)); if (index >= 0) list.splice(index, 1); } events.push({ actor, action: 'update.delete', type: 'update', id: Number(id), title: rows.find((row) => row.id === Number(id)).title }); return true; },
-    async deleteIssue(actor, number) { const index = issues.findIndex((row) => row.number === Number(number)); if (index < 0) return false; const [deleted] = issues.splice(index, 1); events.push({ actor, action: 'issue.delete', type: 'issue', id: Number(number), title: deleted.title }); return true; },
-    async deleteIssueDraft(actor, id) { const index = issueDrafts.findIndex((row) => row.id === Number(id)); if (index < 0) return false; issueDrafts.splice(index, 1); events.push({ actor, action: 'issue.delete', type: 'issue', id: Number(id) }); return true; },
+    async deleteUpdate(actor, id) { const rows = [...drafts, ...published]; if (!rows.some((row) => row.id === Number(id))) return false; for (const list of [drafts, published]) { const index = list.findIndex((row) => row.id === Number(id)); if (index >= 0) trash.updates.push({ ...list.splice(index, 1)[0], deletedAtUtc: '2026-10-29 10:00:00', status: list === published ? 'published' : 'draft' }); } events.push({ actor, action: 'update.delete', type: 'update', id: Number(id), title: rows.find((row) => row.id === Number(id)).title }); return true; },
+    async deleteIssue(actor, number) { const index = issues.findIndex((row) => row.number === Number(number)); if (index < 0) return false; const [deleted] = issues.splice(index, 1); trash.issues.push({ ...deleted, status: 'published', deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'issue.delete', type: 'issue', id: Number(number), title: deleted.title }); return true; },
+    async deleteIssueDraft(actor, id) { const index = issueDrafts.findIndex((row) => row.id === Number(id)); if (index < 0) return false; trash.issues.push({ ...issueDrafts.splice(index, 1)[0], status: 'draft', deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'issue.delete', type: 'issue', id: Number(id) }); return true; },
     async createEditorImage(actor, storedName, mediaType) { editorImages.set(storedName, { id: editorImages.size + 1, storedName, mediaType, uploadedBy: actor }); events.push({ actor, action: 'image.upload', type: 'image', id: editorImages.size }); },
     async getEditorImage(storedName) { return editorImages.get(storedName) || null; },
     async isEditorImagePublished(storedName) { return published.some((item) => item.bodyHtml?.includes(storedName)) || issues.some((item) => item.bodyHtml?.includes(storedName) || item.updates.some((update) => update.bodyHtml?.includes(storedName))); },
@@ -172,7 +185,7 @@ function fakeCmsStore() {
     async isPublishedSubmission(id) { return published.some((item) => item.attachments?.some((file) => file?.id === Number(id))) || issues.some((issue) => issue.attachments?.some((file) => file?.id === Number(id))); },
     async takeOverSubmission(actor, id) { const item = submissions.find((row) => row.id === Number(id) && row.status === 'submitted'); if (!item) return false; item.status = 'taken_over'; events.push({ actor, action: 'submission.take_over' }); return true; },
     async replaceSubmission(actor, id, title, note, storedName, mediaType, byteSize) { const item = submissions.find((row) => row.id === Number(id) && row.ownerUuid === actor && row.status === 'submitted'); if (!item) return null; const oldName = item.storedName; Object.assign(item, { title, note, storedName, mediaType, byteSize }); events.push({ actor, action: 'submission.replace' }); return oldName; },
-    async deleteSubmission(actor, id) { const index = submissions.findIndex((row) => row.id === Number(id) && row.ownerUuid === actor && row.status === 'submitted'); if (index < 0) return null; const [item] = submissions.splice(index, 1); events.push({ actor, action: 'submission.delete', type: 'submission', id: item.id, title: item.title }); return item.storedName; },
+    async deleteSubmission(actor, id) { const index = submissions.findIndex((row) => row.id === Number(id) && row.ownerUuid === actor && row.status === 'submitted'); if (index < 0) return null; const [item] = submissions.splice(index, 1); trash.submissions.push({ ...item, deletedAtUtc: '2026-10-29 10:00:00' }); events.push({ actor, action: 'submission.delete', type: 'submission', id: item.id, title: item.title }); return item.storedName; },
   };
 }
 
@@ -256,7 +269,7 @@ test('Private Steckbriefe: eigene Datei, Redaktionszugriff und fremder Zugriff',
   }
 });
 
-test('Eigene Steckbriefe lassen sich nur vor redaktioneller Übernahme samt Datei löschen', async () => {
+test('Eigene Steckbriefe wandern nur vor redaktioneller Übernahme mit Datei in den Papierkorb', async () => {
   const root = mkdtempSync(join(tmpdir(), 'bbsinfo-delete-submission-'));
   const cms = fakeCmsStore();
   const ownerUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -280,7 +293,7 @@ test('Eigene Steckbriefe lassen sich nur vor redaktioneller Übernahme samt Date
     }
     const ownPage = await (await request(owner.base, '/bbsinfo/submissions/', { headers: { cookie } })).text();
     assert.match(ownPage, /action="\/bbsinfo\/submissions\/delete"/);
-    assert.match(ownPage, /Steckbrief Löschbarer Steckbrief löschen/);
+    assert.match(ownPage, /Steckbrief Löschbarer Steckbrief in den Papierkorb verschieben/);
     assert.match(ownPage, /assets\/feedback\.js/);
     assert.match(ownPage, /data-confirm-delete="Löschbarer Steckbrief"/);
     assert.match(ownPage, /name="confirm" value=""/);
@@ -290,7 +303,7 @@ test('Eigene Steckbriefe lassen sich nur vor redaktioneller Übernahme samt Date
     assert.equal(existsSync(join(root, storedName)), true);
     assert.equal((await post(owner.base, cookie, csrf, '1')).status, 303);
     assert.equal(await cms.getSubmission(1), null);
-    assert.equal(existsSync(join(root, storedName)), false);
+    assert.equal(existsSync(join(root, storedName)), true);
     assert.equal(cms.events.some((event) => event.action === 'submission.delete' && event.title === 'Löschbarer Steckbrief'), true);
   } finally { await new Promise((resolve) => owner.app.close(resolve)); }
 
@@ -325,6 +338,51 @@ test('Eigene Steckbriefe lassen sich nur vor redaktioneller Übernahme samt Date
     await new Promise((resolve) => afterTakeover.app.close(resolve));
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('Papierkorb schützt fremde Einreichungen und stellt Ausgaben mit derselben Nummer wieder her', async () => {
+  const cms = fakeCmsStore();
+  const ownerUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const owner = await setup(null, cms, { ...validInfo, 'iserv:uuid': ownerUuid, name: 'Autorin' });
+  let csrf;
+  try {
+    const cookie = await login(owner);
+    const html = await (await request(owner.base, '/bbsinfo/contributions/', { headers: { cookie } })).text();
+    csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(html)[1];
+    const headers = { cookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
+    assert.equal((await request(owner.base, '/bbsinfo/contributions/save', { method: 'POST', headers, body: new URLSearchParams({ csrf, title: 'Privater Bericht', bodyHtml: '<p>Text.</p>' }) })).status, 303);
+    assert.equal((await request(owner.base, '/bbsinfo/contributions/delete', { method: 'POST', headers, body: new URLSearchParams({ csrf, id: '1', confirm: '1' }) })).status, 303);
+    const trash = await (await request(owner.base, '/bbsinfo/trash/', { headers: { cookie } })).text();
+    assert.match(trash, /Privater Bericht/);
+    assert.doesNotMatch(trash, /name="kind" value="issue"/);
+    assert.equal((await request(owner.base, '/bbsinfo/editor/settings/?tab=trash', { headers: { cookie } })).status, 403);
+    assert.equal((await request(owner.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf, kind: 'issue', id: '1' }) })).status, 403);
+  } finally { await new Promise((resolve) => owner.app.close(resolve)); }
+
+  const stranger = await setup(null, cms, { ...validInfo, 'iserv:uuid': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Fremd' });
+  try {
+    const cookie = await login(stranger);
+    const html = await (await request(stranger.base, '/bbsinfo/trash/', { headers: { cookie } })).text();
+    const otherCsrf = /name="csrf" value="([a-f0-9]{64})"/.exec(await (await request(stranger.base, '/bbsinfo/contributions/', { headers: { cookie } })).text())[1];
+    assert.doesNotMatch(html, /Privater Bericht/);
+    const attempt = await request(stranger.base, '/bbsinfo/trash/restore', { method: 'POST', headers: { cookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: otherCsrf, kind: 'contribution', id: '1' }) });
+    assert.equal(attempt.status, 404);
+  } finally { await new Promise((resolve) => stranger.app.close(resolve)); }
+
+  const editor = await setup(null, cms);
+  try {
+    const cookie = await login(editor);
+    const html = await (await request(editor.base, '/bbsinfo/editor/issues/', { headers: { cookie } })).text();
+    const editorCsrf = /name="csrf" value="([a-f0-9]{64})"/.exec(html)[1];
+    const headers = { cookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
+    await cms.createAndPublishIssue(uuid, 'Testausgabe', 'Text', '2026/27', '', []);
+    assert.equal((await request(editor.base, '/bbsinfo/editor/issues/delete', { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, number: '93', confirm: '93' }) })).status, 303);
+    assert.equal((await request(editor.base, '/bbsinfo/issues/93', { headers: { cookie } })).status, 404);
+    const trash = await (await request(editor.base, '/bbsinfo/editor/settings/?tab=trash', { headers: { cookie } })).text();
+    assert.match(trash, /BBS Info 93/);
+    assert.equal((await request(editor.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, kind: 'issue', id: '1' }) })).status, 303);
+    assert.equal((await request(editor.base, '/bbsinfo/issues/93', { headers: { cookie } })).status, 200);
+  } finally { await new Promise((resolve) => editor.app.close(resolve)); }
 });
 
 test('Updates: Redaktion veröffentlicht, Kollegium liest und verwaltet eigenes Abo', async () => {

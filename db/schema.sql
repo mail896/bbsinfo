@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS updates (
   created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
   updated_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
   published_at DATETIME(6) NULL,
-  INDEX updates_published (status, published_at, id)
+  deleted_at DATETIME(6) NULL,
+  deleted_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  mail_suppressed BOOLEAN NOT NULL DEFAULT FALSE,
+  INDEX updates_published (status, published_at, id),
+  INDEX updates_deleted (deleted_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS update_subscriptions (
@@ -111,7 +115,10 @@ CREATE TABLE IF NOT EXISTS issues (
   published_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
   published_at DATETIME(6) NULL,
-  INDEX issues_published (status, number)
+  deleted_at DATETIME(6) NULL,
+  deleted_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  INDEX issues_published (status, number),
+  INDEX issues_deleted (deleted_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS issue_mail_delivery (
@@ -146,8 +153,11 @@ CREATE TABLE IF NOT EXISTS contributions (
   status ENUM('submitted', 'taken_over') NOT NULL DEFAULT 'submitted',
   created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
   updated_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  deleted_at DATETIME(6) NULL,
+  deleted_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   INDEX contributions_owner (owner_uuid, created_at, id),
-  INDEX contributions_status (status, created_at, id)
+  INDEX contributions_status (status, created_at, id),
+  INDEX contributions_deleted (deleted_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS issue_contributions (
@@ -185,8 +195,11 @@ CREATE TABLE IF NOT EXISTS submissions (
   created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
   taken_at DATETIME(6) NULL,
   taken_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  deleted_at DATETIME(6) NULL,
+  deleted_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
   INDEX submissions_owner (owner_uuid, created_at, id),
-  INDEX submissions_status (status, created_at, id)
+  INDEX submissions_status (status, created_at, id),
+  INDEX submissions_deleted (deleted_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS update_submissions (

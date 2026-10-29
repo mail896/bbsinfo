@@ -42,8 +42,8 @@ test('Objekt- und Datumsfilter gelten identisch für Audit-Seite und CSV und ble
     assert.match(sql, /e\.occurred_at < \?/);
     assert.match(sql, /e\.object_id/);
     assert.match(sql, /LEFT JOIN updates u/);
-    assert.match(sql, /LEFT JOIN issues draft_issue ON e\.object_type = 'issue' AND e\.action = 'issue\.create' AND draft_issue\.id = e\.object_id/);
-    assert.match(sql, /LEFT JOIN issues published_issue ON e\.object_type = 'issue' AND e\.action <> 'issue\.create' AND published_issue\.number = e\.object_id/);
+    assert.match(sql, /LEFT JOIN issues draft_issue ON e\.object_type = 'issue' AND e\.action IN \('issue\.create', 'issue\.draft_delete', 'issue\.draft_restore', 'issue\.draft_purge'\) AND draft_issue\.id = e\.object_id/);
+    assert.match(sql, /LEFT JOIN issues published_issue ON e\.object_type = 'issue' AND e\.action NOT IN \('issue\.create', 'issue\.draft_delete', 'issue\.draft_restore', 'issue\.draft_purge'\) AND published_issue\.number = e\.object_id/);
     assert.match(sql, /CONCAT\('BBS Info ', e\.object_id/);
     assert.doesNotMatch(sql, /BBS Info 94|2026-03-29 22:00:00/);
     assert.equal(params.filter((value) => value === 'BBS Info 94').length, 4);

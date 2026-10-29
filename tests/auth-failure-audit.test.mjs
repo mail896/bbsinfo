@@ -65,7 +65,7 @@ test('Readiness verlangt die Migration für anonyme Audit-Ereignisse', async () 
         if (sql.includes('information_schema.tables')) return [{ n: 20 }];
         if (sql.includes('information_schema.columns')) {
           assert.match(sql, /audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES'/);
-          return [{ n: nullable ? 7 : 6 }];
+          return [{ n: nullable ? 16 : 15 }];
         }
         return [];
       },

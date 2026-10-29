@@ -94,6 +94,7 @@ function personalPage(active, content, script = '', showContributions = true, sh
   const tabs = [
     showContributions ? { label: 'Meine Beiträge', href: `${base}contributions/`, key: 'contributions' } : null,
     showSubmissions ? { label: 'Meine Steckbriefe', href: `${base}submissions/`, key: 'submissions' } : null,
+    { label: 'Papierkorb', href: `${base}trash/`, key: 'trash' },
   ].filter(Boolean);
   const nav = tabs.length > 1 ? `<nav class="personal-tabs" aria-label="Meine Inhalte">${tabs.map((tab) => `<a href="${tab.href}"${active === tab.key ? ' aria-current="page"' : ''}>${tab.label}</a>`).join('')}</nav>` : '';
   return page('Meine Inhalte', `<section class="personal-page"><p><a href="${base}">← Zur Startseite</a></p><h1>Meine Inhalte</h1>${nav}<div class="personal-content">${content}</div></section>`, script);
@@ -145,7 +146,7 @@ function editorField(id, row, templates) {
 function deleteControl({ action, field, id, title, kind, csrf }) {
   const label = htmlEscape(title);
   const key = Number(id);
-  return `<form class="inline-delete" method="post" action="${base}${action}" data-confirm-delete="${label}" data-confirm-kind="${kind}" data-confirm-id="${key}"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="${field}" value="${key}"><input type="hidden" name="confirm" value=""><button type="submit" class="delete-x" aria-label="${kind} ${label} löschen"><span aria-hidden="true">×</span> Löschen</button></form>`;
+  return `<form class="inline-delete" method="post" action="${base}${action}" data-confirm-delete="${label}" data-confirm-kind="${kind}" data-confirm-id="${key}"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="${field}" value="${key}"><input type="hidden" name="confirm" value=""><button type="submit" class="delete-x" aria-label="${kind} ${label} in den Papierkorb verschieben"><span aria-hidden="true">×</span> In Papierkorb</button></form>`;
 }
 
 function editorListItem({ title, href, meta = '', actions }) {
@@ -209,7 +210,7 @@ function issueSourceChoices(group, kind, selectedItems = []) {
 export function issueEditorPage(drafts, updates, publishedIssues, submissions, templates, csrf, schoolYear, pages = {}, contributions = [], mailTest = null) {
   const choices = issueSourceChoices(updates, 'updates');
   const colleagueChoices = issueSourceChoices(contributions, 'contributions');
-  const oldDrafts = drafts.length ? `<h2>Frühere Ausgaben-Entwürfe</h2><p>Diese älteren Entwürfe kannst du noch veröffentlichen oder löschen.</p><ul class="editor-items">${drafts.map((item) => editorListItem({
+  const oldDrafts = drafts.length ? `<h2>Frühere Ausgaben-Entwürfe</h2><p>Diese älteren Entwürfe kannst du noch veröffentlichen oder in den Papierkorb verschieben.</p><ul class="editor-items">${drafts.map((item) => editorListItem({
     title: item.title,
     actions: `<form method="post" action="${base}editor/issues/publish"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="id" value="${Number(item.id)}"><button type="submit" class="secondary">Entwurf veröffentlichen</button></form>${deleteControl({ action: 'editor/issues/delete-draft', field: 'id', id: item.id, title: item.title, kind: 'Ausgabenentwurf', csrf })}`,
   })).join('')}</ul>${contentPager('editor/issues/', 'draftPage', pages.drafts, { publishedPage: pages.published?.page || 1 })}` : '';
@@ -247,11 +248,29 @@ export function digestTestPage(updates, mailConfig, csrf, testSent = false) {
   return page('Sammelmailvorschau', `<section><p><a href="${base}editor/settings/">← Einstellungen</a></p><h1>Update-Sammelmail testen</h1><p>Diese Vorschau verwendet die neuesten ${updates.length} veröffentlichten Updates (höchstens 50). Ein Testversand erfolgt nur nach Bestätigung und ausschließlich an Marc. Persönliche Abos werden unabhängig von diesem Test nach der gewählten Einstellung versendet. Der Kollegiumsverteiler bleibt gesperrt.</p><p><strong>Testempfänger:</strong> ${TEST_RECIPIENT}</p>${testSent ? '<p role="status">Testmail an Marc wurde versendet.</p>' : ''}${notice ? `<p><strong>Betreff:</strong> ${htmlEscape(notice.subject)}</p><div class="digest-mail-preview" aria-label="Vorschau der HTML-Sammelmail">${notice.html.match(/<body[^>]*>([\s\S]*)<\/body>/)?.[1] || ''}</div><details><summary>Textfassung für Mailprogramme ohne HTML</summary><pre class="mail-preview">${htmlEscape(notice.body)}</pre></details>` : '<p>Keine veröffentlichten Updates vorhanden.</p>'}${!ready ? '<p>SMTP-Testversand ist noch nicht eingerichtet.</p>' : ''}${action}</section>`);
 }
 
-export function settingsPage(settings, csrf, tab = 'issues', templates = [], canManageEditors = false, editorGrants = []) {
+function trashContents(trash, csrf, editor = false, settings = false) {
+  const groups = [
+    ...(editor ? [['updates', 'update', 'Updates']] : []),
+    ...(editor ? [['issues', 'issue', 'Ausgaben']] : []),
+    ['contributions', 'contribution', 'Meine Beiträge'],
+    ['submissions', 'submission', 'Meine Steckbriefe'],
+  ];
+  const pageNumber = trash.page || 1;
+  const href = (number) => settings ? `${base}editor/settings/?tab=trash&page=${number}` : `${base}trash/?page=${number}`;
+  const pager = pageNumber > 1 || trash.hasNext ? `<nav class="pagination" aria-label="Papierkorb-Seiten">${pageNumber > 1 ? `<a href="${href(pageNumber - 1)}">← Zurück</a>` : ''}<span>Seite ${pageNumber}</span>${trash.hasNext ? `<a href="${href(pageNumber + 1)}">Weiter →</a>` : ''}</nav>` : '';
+  return `<p>Gelöschte Inhalte können 30 Tage lang wiederhergestellt werden. Danach werden sie automatisch endgültig entfernt. Ausgabennummern bleiben bis dahin reserviert. Wiederhergestellte veröffentlichte Updates lösen keine neue persönliche E-Mail aus.</p>${groups.map(([key, kind, label]) => `<h2>${label}</h2>${trash[key]?.length ? `<ul class="editor-items">${trash[key].map((item) => `<li class="editor-item"><strong>${item.number ? `BBS Info ${Number(item.number)} · ` : ''}${htmlEscape(item.title)}</strong><p class="meta">Gelöscht: ${htmlEscape(publishedDateTime({ publishedAtUtc: item.deletedAtUtc }))} Uhr${item.status ? ` · ${item.status === 'published' ? 'Veröffentlicht' : 'Entwurf'}` : ''}</p><form method="post" action="${base}trash/restore"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="kind" value="${kind}"><input type="hidden" name="id" value="${Number(item.id)}"><button type="submit" class="secondary">Wiederherstellen</button></form></li>`).join('')}</ul>` : '<p>Keine Einträge.</p>'}`).join('')}${pager}`;
+}
+
+export function trashPage(trash, csrf, editor = false) {
+  return personalPage('trash', trashContents(trash, csrf, editor), '', true, true);
+}
+
+export function settingsPage(settings, csrf, tab = 'issues', templates = [], canManageEditors = false, editorGrants = [], trash = null) {
   const tabs = [
     ['issues', 'Ausgaben-Mail'],
     ['updates', 'Update-Mails'],
     ['templates', 'Textbausteine'],
+    ['trash', 'Papierkorb'],
   ];
   if (canManageEditors) tabs.push(['editors', 'Redaktion']);
   const active = tabs.some(([key]) => key === tab) ? tab : 'issues';
@@ -260,7 +279,7 @@ export function settingsPage(settings, csrf, tab = 'issues', templates = [], can
   const updatePanel = `<h2>Update-Mails</h2><p>Kolleginnen und Kollegen wählen selbst zwischen sofortiger E-Mail, täglicher Sammelmail um 18:00 Uhr, wöchentlicher Sammelmail montags um 07:00 Uhr und keiner Benachrichtigung.</p><form method="post" action="${base}editor/settings/save"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="settingsTab" value="updates"><p><label>Wöchentliche Sammelmail<select name="digestCadence"><option value="every_monday"${settings.digestCadence !== 'disabled' ? ' selected' : ''}>Montags um 07:00 Uhr</option><option value="disabled"${settings.digestCadence === 'disabled' ? ' selected' : ''}>Pausieren</option></select></label></p><p class="meta">Persönliche Update-Mails gehen an angemeldete Konten mit Schuladresse und aktivem Abo. Der Kollegiumsverteiler bleibt gesperrt.</p><p><button type="submit">Rhythmus speichern</button></p></form><p><a href="${base}editor/digest/">Sammelmailvorschau und Testversand an Marc →</a></p>`;
   const editorRows = editorGrants.length ? `<ul class="editor-items">${editorGrants.map((grant) => `<li class="editor-item"><strong>${htmlEscape(grant.name || grant.email)}</strong>${grant.name ? `<span class="meta">${htmlEscape(grant.email)}</span>` : ''}<span class="meta">${grant.userUuid ? 'Aktiv nach IServ-Anmeldung' : 'Wartet auf passende IServ-Anmeldung'}</span><details><summary class="delete-x"><span aria-hidden="true">×</span> Löschen</summary><form method="post" action="${base}editor/settings/editors/remove"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="email" value="${htmlEscape(grant.email)}"><label><input type="checkbox" name="confirm" value="${htmlEscape(grant.email)}" required> Redaktionsrecht für ${htmlEscape(grant.email)} entfernen</label><button type="submit" class="secondary">Entfernen bestätigen</button></form></details></li>`).join('')}</ul>` : '<p>Noch keine zusätzlichen Redakteure eingetragen.</p>';
   const editorsPanel = `<h2>Redaktion</h2><p>Zusätzliche Redakteure erhalten Zugriff auf Beiträge, Ausgaben und Textbausteine. Audit-Log und Nutzungsstatistik bleiben ausschließlich für Marc sichtbar.</p><form method="post" action="${base}editor/settings/editors/add"><input type="hidden" name="csrf" value="${csrf}"><label>IServ-E-Mail-Adresse<input type="email" name="email" required maxlength="254" placeholder="name@school.example"></label><p><button type="submit">Redakteur hinzufügen</button></p></form><h3>Zusätzliche Redakteure</h3>${editorRows}<p class="meta">Ein neues Konto wird erst nach Anmeldung mit seiner passenden IServ-Adresse und Mitgliedschaft in „Kollegium“ freigeschaltet. Bereits in der geschützten Serverkonfiguration hinterlegte Redaktionskonten bleiben unabhängig von dieser Liste bestehen.</p>`;
-  const content = active === 'issues' ? issuePanel : active === 'updates' ? updatePanel : active === 'editors' ? editorsPanel : templateSettingsPanel(templates, csrf);
+  const content = active === 'issues' ? issuePanel : active === 'updates' ? updatePanel : active === 'editors' ? editorsPanel : active === 'trash' ? trashContents(trash || { updates: [], issues: [], contributions: [], submissions: [] }, csrf, true, true) : templateSettingsPanel(templates, csrf);
   return page('Einstellungen', `<section class="settings-page"><p><a href="${base}">← Zur Startseite</a></p><span class="eyebrow">REDAKTION · EINSTELLUNGEN</span><h1>Einstellungen</h1>${navigation}<div class="settings-panel" id="settings-content">${content}</div></section>`, active === 'templates' ? 'editor.js' : '');
 }
 
@@ -270,13 +289,13 @@ const actionLabels = {
   'archive.list': 'Archiv geöffnet', 'archive.search': 'Archiv durchsucht', 'archive.pdf': 'PDF geöffnet',
   'search.perform': 'Suche ausgeführt', 'issue.view': 'Ausgabe geöffnet', 'issue.pdf': 'Ausgabe als PDF geöffnet',
   'update.create': 'Update angelegt', 'update.edit': 'Entwurf bearbeitet', 'update.correct': 'Update korrigiert', 'update.published_edit': 'Update bearbeitet', 'update.publish': 'Update veröffentlicht', 'update.history': 'Versionen angesehen',
-  'update.delete': 'Beitrag gelöscht',
+  'update.delete': 'Update in den Papierkorb verschoben', 'update.restore': 'Update wiederhergestellt', 'update.purge': 'Update endgültig entfernt',
   'issue.create': 'Ausgabe angelegt', 'issue.publish': 'Ausgabe veröffentlicht', 'issue.mail_preview': 'Mailvorschau geöffnet', 'issue.mail_test_start': 'Testmail an Marc gestartet', 'issue.mail_test': 'Testmail an Marc versendet', 'issue.mail_start': 'Mailversand gestartet', 'issue.mail_sent': 'Mail versendet', 'issue.mail_uncertain': 'Mailstatus unklar', 'digest.preview': 'Sammelmailvorschau geöffnet', 'digest.test_start': 'Sammelmail-Test an Marc gestartet', 'digest.test_sent': 'Sammelmail-Test an Marc gesendet',
   'update.mail_start': 'Persönliche Update-Mail vorbereitet', 'update.mail_sent': 'Persönliche Update-Mail beim Mailserver abgegeben', 'update.mail_uncertain': 'Status der persönlichen Update-Mail unklar',
-  'issue.edit': 'Ausgabe bearbeitet', 'issue.delete': 'Ausgabe gelöscht',
+  'issue.edit': 'Ausgabe bearbeitet', 'issue.delete': 'Ausgabe in den Papierkorb verschoben', 'issue.restore': 'Ausgabe wiederhergestellt', 'issue.purge': 'Ausgabe endgültig entfernt', 'issue.draft_delete': 'Ausgabenentwurf in den Papierkorb verschoben', 'issue.draft_restore': 'Ausgabenentwurf wiederhergestellt', 'issue.draft_purge': 'Ausgabenentwurf endgültig entfernt',
   'subscription.enable': 'Abo eingeschaltet', 'subscription.disable': 'Abo ausgeschaltet',
-  'contribution.submit': 'Kollegenbeitrag eingereicht', 'contribution.edit': 'Kollegenbeitrag geändert', 'contribution.delete': 'Kollegenbeitrag gelöscht', 'contribution.take_over': 'Kollegenbeitrag übernommen',
-  'submission.create': 'Steckbrief hochgeladen', 'submission.replace': 'Steckbrief ersetzt', 'submission.delete': 'Steckbrief gelöscht', 'submission.take_over': 'Steckbrief übernommen', 'submission.file': 'Steckbrief geöffnet', 'submission.published_file': 'Veröffentlichten Steckbrief geöffnet',
+  'contribution.submit': 'Kollegenbeitrag eingereicht', 'contribution.edit': 'Kollegenbeitrag geändert', 'contribution.delete': 'Kollegenbeitrag in den Papierkorb verschoben', 'contribution.restore': 'Kollegenbeitrag wiederhergestellt', 'contribution.purge': 'Kollegenbeitrag endgültig entfernt', 'contribution.take_over': 'Kollegenbeitrag übernommen',
+  'submission.create': 'Steckbrief hochgeladen', 'submission.replace': 'Steckbrief ersetzt', 'submission.delete': 'Steckbrief in den Papierkorb verschoben', 'submission.restore': 'Steckbrief wiederhergestellt', 'submission.purge': 'Steckbrief endgültig entfernt', 'submission.take_over': 'Steckbrief übernommen', 'submission.file': 'Steckbrief geöffnet', 'submission.published_file': 'Veröffentlichten Steckbrief geöffnet',
   'image.upload': 'Bild hochgeladen', 'image.view': 'Bild geöffnet',
   'template.create': 'Textbaustein angelegt', 'template.edit': 'Textbaustein bearbeitet', 'settings.edit': 'Einstellungen bearbeitet',
   'editor.grant': 'Redaktionsrecht vergeben', 'editor.bind': 'Redaktionsrecht an Konto gebunden', 'editor.revoke': 'Redaktionsrecht entzogen',
@@ -287,13 +306,13 @@ function auditActorName(row) {
   if (automaticMailActions.has(row.action)) return 'BBS Info';
   return row.actorUuid === null ? 'Ohne zugeordnete Person' : row.actorName || 'Name noch nicht erfasst';
 }
-const pageLabels = { home: 'Startseite', updates: 'Updates', issues: 'Ausgaben', contributions: 'Meine Beiträge', stats: 'Nutzungsstatistik', audit: 'Audit-Log', editor: 'Redaktion', 'editor.issues': 'Ausgaben-Redaktion', 'editor.templates': 'Textbausteine', submissions: 'Steckbriefe' };
+const pageLabels = { home: 'Startseite', updates: 'Updates', issues: 'Ausgaben', contributions: 'Meine Beiträge', trash: 'Papierkorb', stats: 'Nutzungsstatistik', audit: 'Audit-Log', editor: 'Redaktion', 'editor.issues': 'Ausgaben-Redaktion', 'editor.templates': 'Textbausteine', submissions: 'Steckbriefe' };
 function objectLabel(row) {
   if (row.objectType === 'auth') return 'IServ-Anmeldung';
   if (row.objectType === 'page') return pageLabels[row.objectId] || row.objectId || 'Seite';
   if (row.objectType === 'archive') return row.objectId ? `BBS Info ${row.objectId}` : 'Historisches Archiv';
   if (row.objectType === 'issue') {
-    if (row.action === 'issue.create') return row.objectTitle ? `Ausgabenentwurf: ${row.objectTitle}` : 'Ausgabenentwurf';
+    if (['issue.create', 'issue.draft_delete', 'issue.draft_restore', 'issue.draft_purge'].includes(row.action)) return row.objectTitle ? `Ausgabenentwurf: ${row.objectTitle}` : 'Ausgabenentwurf';
     return row.objectTitle ? `BBS Info ${row.objectId}: ${row.objectTitle}` : `BBS Info ${row.objectId}`;
   }
   if (row.objectType === 'update') return row.objectTitle ? `Update: ${row.objectTitle}` : 'Update';
@@ -311,7 +330,7 @@ function objectHref(row) {
   const numericId = /^[1-9][0-9]*$/.test(id) ? id : null;
   if (row.objectType === 'archive') return row.action === 'archive.pdf' && numericId ? `${base}archive/${numericId}.pdf` : `${base}archive/`;
   if (row.objectType === 'issue') {
-    if (numericId && ['issue.view', 'issue.publish', 'issue.edit', 'issue.mail_preview', 'issue.mail_test_start', 'issue.mail_test', 'issue.mail_start', 'issue.mail_sent', 'issue.mail_uncertain'].includes(row.action)) return `${base}issues/${numericId}`;
+    if (numericId && ['issue.view', 'issue.publish', 'issue.edit', 'issue.restore', 'issue.mail_preview', 'issue.mail_test_start', 'issue.mail_test', 'issue.mail_start', 'issue.mail_sent', 'issue.mail_uncertain'].includes(row.action)) return `${base}issues/${numericId}`;
     return `${base}editor/issues/`;
   }
   if (row.objectType === 'update') {

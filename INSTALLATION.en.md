@@ -1,6 +1,6 @@
 # Installation and operation
 
-This guide describes the components for a **separate installation**; it is not an unattended universal installer. BBS Info 1.0 was built for BBS Einbeck and its IServ. The public source uses neutral `school.example` domains and mailboxes.
+This guide describes the components for a **separate installation**; it is not an unattended universal installer. BBS Info 1.1 was built for BBS Einbeck and its IServ. The public source uses neutral `school.example` domains and mailboxes.
 
 ## Requirements
 
@@ -17,6 +17,8 @@ This guide describes the components for a **separate installation**; it is not a
 3. Replace the fixed sample domains and email addresses in `backend/` and `design/web/` with your environment's values. The OIDC callback must exactly match the IServ registration. Keep the test fixtures consistent and rerun the tests.
 4. Create a dedicated MariaDB database and account; apply `db/schema.sql` to an **empty** database. The files under `db/migrations/` upgrade older installs and must not all be blindly replayed over the current schema. Grant only the rights needed by the service.
 5. Create private storage for the archive, submissions and editor images. PDFs, thumbnails, the SQLite index, uploads and MariaDB data must stay outside the web root and Git.
+
+For an existing 1.0 installation, make and restore-test a private full backup before switching to 1.1, then apply `db/migrations/2026-10-29-content-trash.sql` once. Expired trash entries are purged on service start and daily; the private submissions directory must be configured.
 6. Start the service with `BBSINFO_CONFIG` or systemd credentials. The default port binds only to `127.0.0.1`; `BBSINFO_SOCKET` selects a Unix socket. Optional paths: `BBSINFO_ARCHIVE_ROOT`, `BBSINFO_SUBMISSION_ROOT`, `BBSINFO_EDITOR_IMAGE_ROOT`.
 7. Configure Apache or another reverse proxy for `/bbsinfo/` and its static assets. `deploy/` provides an adapted example. Protected routes must reject anonymous requests.
 

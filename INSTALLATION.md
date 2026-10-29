@@ -1,6 +1,6 @@
 # Installation und Betrieb
 
-Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installation**. Sie ist kein unbeaufsichtigter Universalinstaller. BBS Info 1.0 wurde für die BBS Einbeck und deren IServ vorbereitet; im Public-Stand sind Domains und Mailadressen auf `school.example` neutralisiert.
+Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installation**. Sie ist kein unbeaufsichtigter Universalinstaller. BBS Info 1.1 wurde für die BBS Einbeck und deren IServ vorbereitet; im Public-Stand sind Domains und Mailadressen auf `school.example` neutralisiert.
 
 ## Voraussetzungen
 
@@ -17,6 +17,8 @@ Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installat
 3. Die festen Beispiel-Domains und Mailadressen in `backend/` sowie `design/web/` auf die eigene Umgebung anpassen. Der OIDC-Callback muss mit der IServ-Registrierung exakt übereinstimmen. Danach alle Tests erneut ausführen; Test-Fixtures bei einer Domänenanpassung konsistent anpassen.
 4. MariaDB-Datenbank und eigenes Dienstkonto anlegen und `db/schema.sql` auf eine **leere** Datenbank anwenden. Die Dateien unter `db/migrations/` dienen Upgrades älterer Stände; sie nicht pauschal zusätzlich auf das aktuelle Schema anwenden. Dem Dienstkonto nur die für die Tabellen benötigten Rechte geben.
 5. Private Verzeichnisse für Archiv, Einreichungen und Redaktionsbilder anlegen. Original-PDFs, Vorschaubilder, SQLite-Index, Uploads und MariaDB-Dateien gehören nicht in den Webroot oder nach Git.
+
+Bei einer bestehenden Installation von Version 1.0 vor dem Wechsel auf 1.1 eine private Vollsicherung samt Rücksicherungstest durchführen und `db/migrations/2026-10-29-content-trash.sql` einmalig anwenden. Der Papierkorb bereinigt abgelaufene Einträge beim Dienststart und täglich; dazu muss das private Einreichungsverzeichnis konfiguriert sein.
 6. Den Dienst mit `BBSINFO_CONFIG` oder systemd-Credentials starten. Der Standard-Port bindet nur an `127.0.0.1`; `BBSINFO_SOCKET` wählt einen Unix-Socket. Optional: `BBSINFO_ARCHIVE_ROOT`, `BBSINFO_SUBMISSION_ROOT`, `BBSINFO_EDITOR_IMAGE_ROOT`.
 7. Apache oder einen anderen Reverse Proxy für `/bbsinfo/` und die statischen Assets einrichten. `deploy/` enthält ein angepasstes Beispielprofil. Geschützte Routen müssen ohne IServ-Sitzung abgewiesen werden.
 

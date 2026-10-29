@@ -54,7 +54,7 @@ test('Eine freie 93 wird auch bei alter Sequenz 96 vor belegten 94 und 95 vergeb
   assert.ok(statements.some(({ sql, params }) => sql.startsWith('UPDATE issue_sequence SET next_number') && params[0] === 94));
 });
 
-test('Steckbrief-Löschen sperrt die Zeile und entfernt nur eigene offene Einreichungen', async () => {
+test('Steckbrief-Löschen sperrt die Zeile und verschiebt nur eigene offene Einreichungen', async () => {
   const statements = [];
   let row = { ownerUuid: actor, status: 'submitted', title: 'Mein Steckbrief', storedName: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' };
   const connection = {
@@ -67,8 +67,9 @@ test('Steckbrief-Löschen sperrt die Zeile und entfernt nur eigene offene Einrei
   };
   const store = createCmsStore({ async getConnection() { return connection; } });
   assert.equal(await store.deleteSubmission(actor, 7), row.storedName);
-  assert.ok(statements.some(({ sql }) => sql.endsWith('FROM submissions WHERE id = ? FOR UPDATE')));
-  assert.ok(statements.some(({ sql }) => sql.startsWith('DELETE FROM submissions')));
+  assert.ok(statements.some(({ sql }) => sql.endsWith('FROM submissions WHERE id = ? AND deleted_at IS NULL FOR UPDATE')));
+  assert.ok(statements.some(({ sql }) => sql.startsWith('UPDATE submissions SET deleted_at = UTC_TIMESTAMP(6)')));
+  assert.ok(statements.every(({ sql }) => !sql.startsWith('DELETE FROM submissions')));
   assert.ok(statements.some(({ sql, params }) => sql.startsWith('INSERT INTO audit_events') && params[1] === 'submission.delete' && params[4] === 'Mein Steckbrief'));
   statements.length = 0;
   row = { ...row, status: 'taken_over' };

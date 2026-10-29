@@ -16,7 +16,7 @@ import { renderIssuePdf } from './issue-pdf.mjs';
 import { countPdfPages, renderPdfPage } from './submission-preview.mjs';
 import { optimizeEditorUpload, renderEditorImageVariant } from './editor-image.mjs';
 import { cleanRichText, plainFromHtml } from './rich-text.mjs';
-import { base, page, feedbackToast, landing, home, searchPage, updatesPage, updateDetailPage, contributionsPage, editorPage, settingsPage, digestTestPage, issuesPage, issuePage, issueEditorPage, issueEditPage, issueMailPage, auditPage, auditCsv, statsPage, submissionsPage, archivePage } from './web-pages.mjs';
+import { base, page, feedbackToast, landing, home, searchPage, updatesPage, updateDetailPage, contributionsPage, editorPage, settingsPage, trashPage, digestTestPage, issuesPage, issuePage, issueEditorPage, issueEditPage, issueMailPage, auditPage, auditCsv, statsPage, submissionsPage, archivePage } from './web-pages.mjs';
 
 const origin = 'https://apps.school.example';
 const publicAssets = new Map([
@@ -250,7 +250,13 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
   }
   const notificationTimer = setInterval(() => { void runNotifications(); }, 60000);
   notificationTimer.unref();
-  const retentionTimer = setInterval(() => { if (cmsStore?.pruneSearchEvents) void cmsStore.pruneSearchEvents().catch(() => process.stderr.write('BBS Info: Suchdatenbereinigung fehlgeschlagen.\n')); }, 24 * 60 * 60 * 1000);
+  const retentionTimer = setInterval(() => {
+    if (cmsStore?.pruneSearchEvents) void cmsStore.pruneSearchEvents().catch(() => process.stderr.write('BBS Info: Suchdatenbereinigung fehlgeschlagen.\n'));
+    if (cmsStore?.pruneTrash && submissionRoot) void cmsStore.pruneTrash(async (name) => {
+      try { await removeSubmissionFile(submissionRoot, name); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }).catch(() => process.stderr.write('BBS Info: Papierkorbbereinigung fehlgeschlagen.\n'));
+  }, 24 * 60 * 60 * 1000);
   retentionTimer.unref();
   const app = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -405,8 +411,8 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       const updateDetailMatch = /^\/bbsinfo\/updates\/([1-9][0-9]*)$/.exec(path);
       const submissionsAvailable = cmsStore && submissionRoot;
       const imagesAvailable = cmsStore && editorImageRoot;
-      const cmsGet = cmsStore && ([base + 'updates/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
-      const cmsPost = cmsStore && ([base + 'subscribe', base + 'contributions/save', base + 'contributions/delete', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'submissions/take-over'].includes(path)));
+      const cmsGet = cmsStore && ([base + 'updates/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'trash/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
+      const cmsPost = cmsStore && ([base + 'subscribe', base + 'contributions/save', base + 'contributions/delete', base + 'trash/restore', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'submissions/take-over'].includes(path)));
       if (((path === base || (archiveStore && (path === archivePath || pdfMatch || thumbnailMatch)) || cmsGet) && (req.method === 'GET' || req.method === 'HEAD')) || (cmsPost && req.method === 'POST')) {
         const sid = c[sessionCookie];
         const session = sessions.get(sid);
@@ -525,11 +531,22 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
           if (path === `${base}editor/settings/`) {
             if (!identity.editor) return denyProtectedAccess(identity, 'editor');
             const tab = url.searchParams.get('tab') || 'issues';
-            if (!['issues', 'updates', 'templates', 'editors'].includes(tab)) return send(400, page('Ungültige Ansicht', '<section><h1>Ungültige Ansicht</h1></section>'));
+            const trashPageNumber = tab === 'trash' ? contentPageNumber(url, 'page') : 1;
+            if (!trashPageNumber) return send(400, page('Ungültige Seite', '<section><h1>Ungültige Seite</h1></section>'));
+            if (!['issues', 'updates', 'templates', 'editors', 'trash'].includes(tab)) return send(400, page('Ungültige Ansicht', '<section><h1>Ungültige Ansicht</h1></section>'));
             if (tab === 'editors' && !identity.auditOwner) return denyProtectedAccess(identity, 'editor');
-            const [appSettings, templates, editorGrants] = await Promise.all([cmsStore.getAppSettings(), tab === 'templates' ? cmsStore.listTemplates() : Promise.resolve([]), tab === 'editors' ? cmsStore.listEditorGrants() : Promise.resolve([])]);
+            const [appSettings, templates, editorGrants, trash] = await Promise.all([cmsStore.getAppSettings(), tab === 'templates' ? cmsStore.listTemplates() : Promise.resolve([]), tab === 'editors' ? cmsStore.listEditorGrants() : Promise.resolve([]), tab === 'trash' ? cmsStore.listTrash(identity.uuid, true, trashPageNumber) : Promise.resolve(null)]);
+            if (trash && trashPageNumber > 1 && ![trash.updates, trash.issues, trash.contributions, trash.submissions].some((rows) => rows.length)) return send(404, page('Seite nicht gefunden', '<section><h1>Seite nicht gefunden</h1></section>'));
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'editor.settings');
-            return send(200, settingsPage(appSettings, session.csrf, tab, templates, identity.auditOwner, editorGrants));
+            return send(200, settingsPage(appSettings, session.csrf, tab, templates, identity.auditOwner, editorGrants, trash));
+          }
+          if (path === `${base}trash/`) {
+            const trashPageNumber = contentPageNumber(url, 'page');
+            if (!trashPageNumber) return send(400, page('Ungültige Seite', '<section><h1>Ungültige Seite</h1></section>'));
+            const trash = await cmsStore.listTrash(identity.uuid, identity.editor, trashPageNumber);
+            if (trashPageNumber > 1 && ![trash.updates, trash.issues, trash.contributions, trash.submissions].some((rows) => rows.length)) return send(404, page('Seite nicht gefunden', '<section><h1>Seite nicht gefunden</h1></section>'));
+            if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'trash');
+            return send(200, trashPage(trash, session.csrf, identity.editor));
           }
           if (path === `${base}editor/digest/`) {
             if (!identity.editor) return denyProtectedAccess(identity, 'editor');
@@ -662,7 +679,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             return send(200, statsPage(report, pageNumber, await readAuditHealth()));
           }
           if (cmsPost) {
-            if (![`${base}subscribe`, `${base}contributions/save`, `${base}contributions/delete`, `${base}editor/images/upload`, `${base}submissions/upload`, `${base}submissions/replace`, `${base}submissions/delete`].includes(path) && !identity.editor) return denyProtectedAccess(identity, path.startsWith(`${base}editor/issues/`) ? 'editor.issues' : 'editor');
+            if (![`${base}subscribe`, `${base}contributions/save`, `${base}contributions/delete`, `${base}trash/restore`, `${base}editor/images/upload`, `${base}submissions/upload`, `${base}submissions/replace`, `${base}submissions/delete`].includes(path) && !identity.editor) return denyProtectedAccess(identity, path.startsWith(`${base}editor/issues/`) ? 'editor.issues' : 'editor');
             if (path === `${base}editor/images/upload`) {
               if (req.headers.origin !== origin) return send(403, page('Zugriff verweigert', '<section><h1>Zugriff verweigert</h1></section>'));
               let upload;
@@ -727,11 +744,17 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             if (path === `${base}submissions/delete`) {
               const id = form.get('id');
               if (!/^[1-9][0-9]{0,9}$/.test(id || '') || form.get('confirm') !== id) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
-              const storedName = await cmsStore.deleteSubmission(identity.uuid, id);
-              if (!storedName) return send(409, page('Nicht mehr löschbar', '<section><h1>Dieser Steckbrief wurde bereits übernommen oder gehört nicht zu deinem Konto.</h1></section>'));
-              try { await removeSubmissionFile(submissionRoot, storedName); }
-              catch { process.stderr.write('BBS Info: Gelöschte Einreichungsdatei konnte nicht entfernt werden.\n'); }
-              return redirect(`${base}submissions/`, 'Steckbrief gelöscht.');
+              const deleted = await cmsStore.deleteSubmission(identity.uuid, id);
+              if (!deleted) return send(409, page('Nicht mehr löschbar', '<section><h1>Dieser Steckbrief wurde bereits übernommen oder gehört nicht zu deinem Konto.</h1></section>'));
+              return redirect(`${base}submissions/`, 'Steckbrief in den Papierkorb verschoben.');
+            }
+            if (path === `${base}trash/restore`) {
+              const kind = form.get('kind');
+              const id = form.get('id');
+              if (!['update', 'issue', 'contribution', 'submission'].includes(kind) || !/^[1-9][0-9]{0,9}$/.test(id || '')) return send(400, page('Ungültiger Eintrag', '<section><h1>Ungültiger Papierkorbeintrag.</h1></section>'));
+              if (['update', 'issue'].includes(kind) && !identity.editor) return denyProtectedAccess(identity, 'editor');
+              if (!(await cmsStore.restoreTrash(identity.uuid, kind, id, identity.editor))) return send(404, page('Nicht gefunden', '<section><h1>Dieser Eintrag ist nicht mehr wiederherstellbar.</h1></section>'));
+              return redirect(identity.editor ? `${base}editor/settings/?tab=trash` : `${base}trash/`, 'Inhalt wiederhergestellt.');
             }
             if (path === `${base}subscribe`) {
               const mode = form.get('mode');
@@ -755,7 +778,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               const id = form.get('id');
               if (!/^[1-9][0-9]{0,9}$/.test(id || '') || form.get('confirm') !== id) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
               if (!(await cmsStore.deleteContribution(identity.uuid, id))) return send(409, page('Nicht mehr löschbar', '<section><h1>Dieser Beitrag wurde bereits übernommen.</h1></section>'));
-              return redirect(`${base}contributions/`, 'Beitrag gelöscht.');
+              return redirect(`${base}contributions/`, 'Beitrag in den Papierkorb verschoben.');
             }
             if (issueMailMatch) {
               if (!colleagueDeliveryEnabled(mailConfig)) return send(403, page('Versand gesperrt', '<section><h1>Der Versand an das Kollegium ist im Testmodus gesperrt.</h1></section>'));
@@ -849,18 +872,18 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               try { deleted = await cmsStore.deleteIssue(identity.uuid, form.get('number')); }
               catch (error) { if (/begonnenem Mailversand/.test(error.message)) return send(409, page('Löschen nicht möglich', '<section><h1>Für diese Ausgabe wurde der Mailversand bereits begonnen. Ihre Nummer darf nicht erneut vergeben werden.</h1></section>')); throw error; }
               if (!deleted) return send(404, page('Nicht gefunden', '<section><h1>Ausgabe nicht gefunden.</h1></section>'));
-              return redirect(`${base}editor/issues/`, 'Ausgabe gelöscht.');
+              return redirect(`${base}editor/issues/`, 'Ausgabe in den Papierkorb verschoben.');
             }
             if (!/^[1-9][0-9]{0,9}$/.test(form.get('id') || '')) return send(400, page('Ungültiger Entwurf', '<section><h1>Ungültiger Entwurf</h1></section>'));
             if (path === `${base}editor/delete-update`) {
               if (form.get('confirm') !== form.get('id')) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
               if (!(await cmsStore.deleteUpdate(identity.uuid, form.get('id')))) return send(404, page('Nicht gefunden', '<section><h1>Beitrag nicht gefunden.</h1></section>'));
-              return redirect(`${base}editor/`, 'Beitrag gelöscht.');
+              return redirect(`${base}editor/`, 'Beitrag in den Papierkorb verschoben.');
             }
             if (path === `${base}editor/issues/delete-draft`) {
               if (form.get('confirm') !== form.get('id')) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
               if (!(await cmsStore.deleteIssueDraft(identity.uuid, form.get('id')))) return send(404, page('Nicht gefunden', '<section><h1>Entwurf nicht gefunden.</h1></section>'));
-              return redirect(`${base}editor/issues/`, 'Ausgabenentwurf gelöscht.');
+              return redirect(`${base}editor/issues/`, 'Ausgabenentwurf in den Papierkorb verschoben.');
             }
             if (path === `${base}editor/issues/publish`) {
               const number = await cmsStore.publishIssue(identity.uuid, form.get('id'));
@@ -928,6 +951,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     stage = 'Einreichungen';
     const submissionRoot = process.env.BBSINFO_SUBMISSION_ROOT || null;
     if (submissionRoot) validateSubmissionRoot(submissionRoot);
+    if (cmsStore && submissionRoot) {
+      try {
+        await cmsStore.pruneTrash(async (name) => {
+          try { await removeSubmissionFile(submissionRoot, name); }
+          catch (error) { if (error.code !== 'ENOENT') throw error; }
+        });
+      } catch { process.stderr.write('BBS Info: Papierkorbbereinigung beim Start fehlgeschlagen.\n'); }
+    }
     const editorImageRoot = process.env.BBSINFO_EDITOR_IMAGE_ROOT || null;
     if (editorImageRoot) validateSubmissionRoot(editorImageRoot);
     stage = 'Mailkonfiguration';

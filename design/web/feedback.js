@@ -15,7 +15,7 @@ const deleteForms = document.querySelectorAll('form[data-confirm-delete]');
 if (deleteForms.length) {
   const dialog = document.createElement('dialog');
   dialog.className = 'confirm-dialog';
-  dialog.innerHTML = '<div class="confirm-dialog-body"><span class="confirm-dialog-mark" aria-hidden="true">×</span><h2>Löschen bestätigen</h2><p data-confirm-question></p><p class="confirm-dialog-note" data-confirm-note></p><div class="confirm-dialog-actions"><button type="button" class="secondary" data-confirm-cancel>Abbrechen</button><button type="button" class="confirm-danger" data-confirm-accept>Endgültig löschen</button></div></div>';
+  dialog.innerHTML = '<div class="confirm-dialog-body"><span class="confirm-dialog-mark" aria-hidden="true">×</span><h2>In den Papierkorb verschieben</h2><p data-confirm-question></p><p class="confirm-dialog-note" data-confirm-note></p><div class="confirm-dialog-actions"><button type="button" class="secondary" data-confirm-cancel>Abbrechen</button><button type="button" class="confirm-danger" data-confirm-accept>In den Papierkorb</button></div></div>';
   document.body.append(dialog);
   let pendingForm = null;
   deleteForms.forEach((form) => {
@@ -27,8 +27,8 @@ if (deleteForms.length) {
       event.preventDefault();
       pendingForm = form;
       const kind = form.dataset.confirmKind || 'Eintrag';
-      dialog.querySelector('[data-confirm-question]').textContent = `${kind} „${form.dataset.confirmDelete}“ endgültig löschen?`;
-      dialog.querySelector('[data-confirm-note]').textContent = kind === 'Ausgabe' ? 'Ihre Nummer wird wieder frei, sofern noch kein Mailversand begonnen wurde.' : 'Dieser Schritt kann nicht rückgängig gemacht werden.';
+      dialog.querySelector('[data-confirm-question]').textContent = `${kind} „${form.dataset.confirmDelete}“ in den Papierkorb verschieben?`;
+      dialog.querySelector('[data-confirm-note]').textContent = kind === 'Ausgabe' ? 'Die Nummer bleibt 30 Tage reserviert. Eine bereits angekündigte Ausgabe kann nicht verschoben werden.' : 'Du kannst den Inhalt 30 Tage lang wiederherstellen.';
       dialog.showModal();
       dialog.querySelector('[data-confirm-cancel]').focus();
     });
