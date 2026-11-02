@@ -46,7 +46,7 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
       }, true);
     },
     async listOwnPhotoSets(user) {
-      return pool.query("SELECT s.id, s.title, DATE_FORMAT(s.event_date, '%Y-%m-%d') AS eventDate, s.status, COUNT(a.id) AS photoCount FROM photo_sets s LEFT JOIN photo_assets a ON a.set_id = s.id AND a.status IN ('private','published') WHERE s.owner_uuid = ? GROUP BY s.id ORDER BY s.id DESC LIMIT 100", [actor(user)]);
+      return pool.query("SELECT s.id, s.title, DATE_FORMAT(s.event_date, '%Y-%m-%d') AS eventDate, s.status, COUNT(a.id) AS photoCount FROM photo_sets s LEFT JOIN photo_assets a ON a.set_id = s.id AND a.status IN ('private','published') WHERE s.owner_uuid = ? GROUP BY s.id HAVING s.status <> 'reviewed' OR COUNT(a.id) > 0 ORDER BY s.id DESC LIMIT 100", [actor(user)]);
     },
     async listPendingPhotoSets() {
       return pool.query("SELECT s.id, s.title, DATE_FORMAT(s.event_date, '%Y-%m-%d') AS eventDate, s.submitted_at AS submittedAt, u.display_name AS ownerName, COUNT(a.id) AS photoCount FROM photo_sets s LEFT JOIN photo_assets a ON a.set_id = s.id AND a.status = 'private' LEFT JOIN iserv_identities u ON u.user_uuid = s.owner_uuid WHERE s.status = 'submitted' GROUP BY s.id ORDER BY s.submitted_at, s.id LIMIT 100");

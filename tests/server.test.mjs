@@ -1569,7 +1569,9 @@ test('Kollegenbeitrag bleibt bis zur Übernahme privat und kann danach nicht meh
     const sid = await login(reader);
     const html = await (await request(reader.base, '/bbsinfo/contributions/', { headers: { cookie: sid } })).text();
     const homeHtml = await (await request(reader.base, '/bbsinfo/', { headers: { cookie: sid } })).text();
-    assert.match(homeHtml, /class="personal-action" href="\/bbsinfo\/contributions\/">Meine Beiträge &amp; Steckbriefe<\/a>/);
+    assert.match(homeHtml, /class="personal-action" href="\/bbsinfo\/contributions\/">Mein BBS Info<\/a>/);
+    assert.match(html, /<h1>Mein BBS Info<\/h1>/);
+    assert.match(html, /href="\/bbsinfo\/notifications\/">Einstellungen<\/a>/);
     assert.doesNotMatch(homeHtml, /href="\/bbsinfo\/submissions\/">Meine Steckbriefe<\/a>/);
     const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(html)[1];
     const headers = { cookie: sid, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };

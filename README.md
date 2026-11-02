@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.3.3** · 2. November 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.3.4** · 2. November 2026 · Idee und Konzeption: Marc Schulz
 
 BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Fotos, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 
@@ -12,11 +12,11 @@ BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurz
 - Laufende Beiträge mit Entwürfen, rich-text-Editor, Bildern und frei bearbeitbaren Textbausteinen.
 - Eigene Beiträge und Steckbriefe des Kollegiums mit redaktioneller Übernahme.
 - Nummerierte Ausgaben aus eigenen Texten und ausgewählten Beiträgen; eingebettete Steckbriefe, freigegebene Library-Bilder, Webansicht und PDF-Download.
-- Geschützte Fotolibrary: Kolleginnen und Kollegen reichen Bilderordner im persönlichen Bereich mit Uploadfortschritt privat ein und können unterbrochene Uploads durch erneute Ordnerwahl mit Inhaltsabgleich fortsetzen; die Redaktion übernimmt ausgewählte Originale in gemeinsame Alben und wählt das Titelbild. Bei Ergänzungen zeigt die Sichtung nur die Angaben des vorhandenen Albums. Die Fotoansicht stellt Kommentare vor die kompakten, nur redaktionellen Korrekturwerkzeuge. Sichtbare Albumvorschauen werden bevorzugt angefordert; freigegebene Vorschaubilder nutzen 24 Stunden privaten Browsercache und werden danach bei erneuter Zugriffsprüfung validiert. Foto-Dateinamen mit Umlauten bleiben beim Upload korrekt. Jahresauswahl, paginierte Albumübersicht, Suche nach freigegebenen Alben, Vorschauen, namentliche Kommentare, Album-ZIP mit Herkunftsliste und auditierte Zugriffe sind enthalten.
+- Geschützte Fotolibrary: Kolleginnen und Kollegen reichen Bilderordner im persönlichen Bereich mit Uploadfortschritt privat ein und können unterbrochene Uploads durch erneute Ordnerwahl mit Inhaltsabgleich fortsetzen; die Redaktion übernimmt ausgewählte Originale in gemeinsame Alben und wählt das Titelbild. Bei Ergänzungen zeigt die Sichtung nur die Angaben des vorhandenen Albums. Leere, gesichtete Fotoeinreichungen werden aus der persönlichen Liste ausgeblendet. Die Fotoansicht stellt Kommentare vor die kompakten, nur redaktionellen Korrekturwerkzeuge. Sichtbare Albumvorschauen werden bevorzugt angefordert; freigegebene Vorschaubilder nutzen 24 Stunden privaten Browsercache und werden danach bei erneuter Zugriffsprüfung validiert. Foto-Dateinamen mit Umlauten bleiben beim Upload korrekt. Jahresauswahl, paginierte Albumübersicht, Suche nach freigegebenen Alben, Vorschauen, namentliche Kommentare, Album-ZIP mit Herkunftsliste und auditierte Zugriffe sind enthalten.
 - 30-Tage-Papierkorb für Updates, Ausgaben, private Beiträge und Steckbriefe; bereits angekündigte Ausgaben bleiben vor Löschung geschützt.
 - Die Redaktion kann offene Einreichungen und unverknüpfte übernommene Steckbriefe direkt in den Papierkorb verschieben und dort Beiträge aller Konten prüfen; persönliche Papierkörbe zeigen nur eigene offene Einreichungen.
 - Suche in neuen Inhalten und freigegebenen Fotoalben sowie im geschützten, teilweise per OCR erschlossenen historischen PDF-Archiv.
-- Persönliche Benachrichtigungen im eigenen Tab: Aktuelles und freigegebene Fotoalben getrennt auswählbar, mit gemeinsamem Rhythmus sofort, täglich oder wöchentlich. Vor jedem Versand wird die aktuelle IServ-Gruppenzugehörigkeit geprüft.
+- „Mein BBS Info“ bündelt eigene Beiträge, Steckbriefe und Fotos sowie Einstellungen und Papierkorb. In den Einstellungen sind Benachrichtigungen für Aktuelles und freigegebene Fotoalben getrennt auswählbar, mit gemeinsamem Rhythmus sofort, täglich oder wöchentlich. Vor jedem Versand wird die aktuelle IServ-Gruppenzugehörigkeit geprüft.
 - Getrennte Ausgaben-Mail mit Vorschau, bearbeitbarer Vorlage und ausdrücklicher Freigabe für einen Verteiler.
 - Audit-Log, Nutzungsstatistik, Suchauswertung, Filter und CSV-Export ausschließlich für die Administration.
 - Einheitliche Oberfläche für Desktop und Mobilgeräte.

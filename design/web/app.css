@@ -260,16 +260,16 @@ li {
 
 .home-nav .photo-action,
 .work-links .photo-action {
-  background: #e8f1f8;
-  border-color: #a9c5d8;
-  color: #204b68;
+  background: #f8e7e4;
+  border-color: #d7aaa2;
+  color: #753b34;
 }
 
 .home-nav .photo-action:hover,
 .home-nav .photo-action:focus-visible,
 .work-links .photo-action:hover,
 .work-links .photo-action:focus-visible {
-  background: #d5e8f4;
+  background: #efd6d0;
 }
 
 .home-nav .personal-action {
