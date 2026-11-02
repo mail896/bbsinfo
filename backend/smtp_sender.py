@@ -18,7 +18,7 @@ def build_message(payload):
     if (recipient != 'admin@school.example' and not live) or payload['from'] != 'mailer@school.example':
         raise ValueError('Invalid test recipient or sender')
     message = EmailMessage()
-    message['From'] = payload['from']
+    message['From'] = f"BBS Info <{payload['from']}>"
     message['To'] = payload['to']
     message['Subject'] = payload['subject']
     message.set_content(payload['body'])
@@ -36,7 +36,7 @@ def main():
     with smtplib.SMTP_SSL(payload['host'], payload['port'], timeout=12, context=ssl.create_default_context()) as smtp:
         smtp.ehlo()
         smtp.login(payload['username'], payload['password'])
-        refused = smtp.send_message(message)
+        refused = smtp.send_message(message, from_addr=payload['from'], to_addrs=[payload['to']])
         if refused:
             raise RuntimeError('Recipient refused')
 

@@ -98,7 +98,7 @@ test('Persönliche Abos erreichen alle angemeldeten Schuladressen, aber niemals 
 });
 
 test('SMTP-Transport blockiert den Kollegiumsverteiler auch bei allgemeiner Versandfreigabe', () => {
-  const script = "import runpy; m=runpy.run_path('backend/smtp_sender.py',run_name='test'); p={'host':'school.example','port':465,'encryption':'ssl','from':'mailer@school.example','to':'staff@school.example','liveAllowed':True,'subject':'Test','body':'Test'}; exec('try:\\n m[\"build_message\"](p)\\n raise AssertionError(\"group allowed\")\\nexcept ValueError:\\n pass'); p['to']='lehrkraft@school.example'; m['build_message'](p)";
+  const script = "import runpy; m=runpy.run_path('backend/smtp_sender.py',run_name='test'); p={'host':'school.example','port':465,'encryption':'ssl','from':'mailer@school.example','to':'staff@school.example','liveAllowed':True,'subject':'Test','body':'Test'}; exec('try:\\n m[\"build_message\"](p)\\n raise AssertionError(\"group allowed\")\\nexcept ValueError:\\n pass'); p['to']='lehrkraft@school.example'; mail=m['build_message'](p); assert str(mail['From'])=='BBS Info <mailer@school.example>'";
   const result = spawnSync('/usr/bin/python3', ['-I', '-c', script], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 });
