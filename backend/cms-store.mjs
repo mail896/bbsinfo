@@ -191,6 +191,20 @@ async function releaseRemovedContributions(conn, ids) {
   for (const id of ids) await conn.query("UPDATE contributions SET status = 'submitted' WHERE id = ? AND NOT EXISTS (SELECT 1 FROM issue_contributions WHERE contribution_id = ?)", [id, id]);
 }
 
+async function purgeIssue(conn, id, row, actor = null) {
+  const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [id]);
+  if (delivery.length) throw new Error('Eine Ausgabe mit begonnenem Mailversand kann nicht endgültig gelöscht werden.');
+  await conn.query('DELETE FROM issue_submissions WHERE issue_id = ?', [id]);
+  await conn.query('DELETE FROM issue_updates WHERE issue_id = ?', [id]);
+  const contributions = await conn.query('SELECT contribution_id AS id FROM issue_contributions WHERE issue_id = ? FOR UPDATE', [id]);
+  await conn.query('DELETE FROM issue_contributions WHERE issue_id = ?', [id]);
+  await releaseRemovedContributions(conn, contributions.map((item) => Number(item.id)).filter(Boolean));
+  await conn.query('DELETE FROM issues WHERE id = ?', [id]);
+  if (row.number) await conn.query('UPDATE issue_sequence SET next_number = LEAST(next_number, ?) WHERE id = 1', [row.number]);
+  const action = row.status === 'draft' ? 'issue.draft_purge' : 'issue.purge';
+  await writeAudit(conn, actor, action, 'issue', row.number || id, row.title);
+}
+
 async function checkedSubmissions(conn, ids) {
   if (!ids.length) return;
   const found = await conn.query(`SELECT id FROM submissions WHERE status = 'taken_over' AND deleted_at IS NULL AND id IN (${ids.map(() => '?').join(',')}) FOR UPDATE`, ids);
@@ -969,7 +983,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const offset = (page - 1) * 50;
       const [updates, issues, contributions, submissions] = await Promise.all([
         editor ? pool.query("SELECT id, title, status, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM updates WHERE deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
-        editor ? pool.query("SELECT id, number, title, status, DATE_FORMAT(deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM issues WHERE deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
+        editor ? pool.query("SELECT i.id, i.number, i.title, i.status, NOT EXISTS (SELECT 1 FROM issue_mail_delivery d WHERE d.issue_id = i.id) AS canPurge, DATE_FORMAT(i.deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM issues i WHERE i.deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY i.deleted_at DESC, i.id DESC LIMIT ? OFFSET ?", [limit, offset]) : Promise.resolve([]),
         pool.query(`SELECT c.id, c.title, c.body, c.body_html AS bodyHtml, p.display_name AS ownerName, DATE_FORMAT(c.deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM contributions c LEFT JOIN iserv_identities p ON p.user_uuid = c.owner_uuid WHERE ${editor ? '' : 'c.owner_uuid = ? AND '}c.status = 'submitted' AND c.deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY c.deleted_at DESC, c.id DESC LIMIT ? OFFSET ?`, editor ? [limit, offset] : [uuid, limit, offset]),
         pool.query(`SELECT s.id, s.title, s.status, p.display_name AS ownerName, DATE_FORMAT(s.deleted_at, '%Y-%m-%d %H:%i:%s') AS deletedAtUtc FROM submissions s LEFT JOIN iserv_identities p ON p.user_uuid = s.owner_uuid WHERE ${editor ? '' : 's.owner_uuid = ? AND '}s.status ${editor ? "IN ('submitted', 'taken_over')" : "= 'submitted'"} AND s.deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY s.deleted_at DESC, s.id DESC LIMIT ? OFFSET ?`, editor ? [limit, offset] : [uuid, limit, offset]),
       ]);
@@ -993,6 +1007,17 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
         return true;
       });
     },
+    async purgeTrashedIssue(actor, issueId) {
+      const uuid = validActor(actor);
+      const id = validUpdateId(issueId);
+      return transact(async (conn) => {
+        await conn.query('SELECT next_number FROM issue_sequence WHERE id = 1 FOR UPDATE');
+        const rows = await conn.query('SELECT title, number, status FROM issues WHERE id = ? AND deleted_at > UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE', [id]);
+        if (rows.length !== 1) return false;
+        await purgeIssue(conn, id, rows[0], uuid);
+        return true;
+      }, true);
+    },
     async pruneTrash(removeFile) {
       if (typeof removeFile !== 'function') throw new Error('Dateibereinigung fehlt.');
       const sources = [
@@ -1009,20 +1034,13 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
             const rows = await conn.query(`SELECT title${kind === 'issue' ? ', number, status' : kind === 'submission' ? ', stored_name AS storedName' : ''} FROM ${table} WHERE id = ? AND deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE`, [item.id]);
             if (rows.length !== 1) return;
             if (kind === 'issue') {
-              const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [item.id]);
-              if (delivery.length) throw new Error('Eine angekündigte Ausgabe darf nicht entfernt werden.');
-              await conn.query('DELETE FROM issue_submissions WHERE issue_id = ?', [item.id]);
-              await conn.query('DELETE FROM issue_updates WHERE issue_id = ?', [item.id]);
-              const oldContributions = await conn.query('SELECT contribution_id AS id FROM issue_contributions WHERE issue_id = ? FOR UPDATE', [item.id]);
-              await conn.query('DELETE FROM issue_contributions WHERE issue_id = ?', [item.id]);
-              await releaseRemovedContributions(conn, oldContributions.map((row) => Number(row.id)).filter(Boolean));
+              await purgeIssue(conn, item.id, rows[0]);
+              return;
             }
             if (kind === 'update') await conn.query('DELETE FROM update_submissions WHERE update_id = ?', [item.id]);
             if (kind === 'submission') await removeFile(rows[0].storedName);
             await conn.query(`DELETE FROM ${table} WHERE id = ?`, [item.id]);
-            if (kind === 'issue' && rows[0].number) await conn.query('UPDATE issue_sequence SET next_number = LEAST(next_number, ?) WHERE id = 1', [rows[0].number]);
-            const action = kind === 'issue' && rows[0].status === 'draft' ? 'issue.draft_purge' : `${kind}.purge`;
-            await writeAudit(conn, null, action, kind, kind === 'issue' ? rows[0].number || item.id : item.id, rows[0].title);
+            await writeAudit(conn, null, `${kind}.purge`, kind, item.id, rows[0].title);
           }, true);
         }
       }

@@ -419,7 +419,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       const photosAvailable = cmsStore && photoRoot;
       const photoRoute = photosAvailable && path.startsWith(`${base}photos/`);
       const cmsGet = cmsStore && (photoRoute || [base + 'updates/', base + 'notifications/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'trash/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
-      const cmsPost = cmsStore && (photoRoute || [base + 'notifications/save', base + 'contributions/save', base + 'contributions/delete', base + 'editor/contributions/delete', base + 'trash/restore', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'editor/submissions/delete', base + 'submissions/take-over'].includes(path)));
+      const cmsPost = cmsStore && (photoRoute || [base + 'notifications/save', base + 'contributions/save', base + 'contributions/delete', base + 'editor/contributions/delete', base + 'trash/restore', base + 'trash/purge-issue', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'editor/submissions/delete', base + 'submissions/take-over'].includes(path)));
       if (((path === base || (archiveStore && (path === archivePath || pdfMatch || thumbnailMatch)) || cmsGet) && (req.method === 'GET' || req.method === 'HEAD')) || (cmsPost && req.method === 'POST')) {
         const sid = c[sessionCookie];
         const session = sessions.get(sid);
@@ -771,6 +771,19 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               if (['update', 'issue'].includes(kind) && !identity.editor) return denyProtectedAccess(identity, 'editor');
               if (!(await cmsStore.restoreTrash(identity.uuid, kind, id, identity.editor))) return send(404, page('Nicht gefunden', '<section><h1>Dieser Eintrag ist nicht mehr wiederherstellbar.</h1></section>'));
               return redirect(identity.editor ? `${base}editor/settings/?tab=trash` : `${base}trash/`, 'Inhalt wiederhergestellt.');
+            }
+            if (path === `${base}trash/purge-issue`) {
+              if (!identity.editor) return denyProtectedAccess(identity, 'editor');
+              const id = form.get('id');
+              if (!/^[1-9][0-9]{0,9}$/.test(id || '') || form.get('confirm') !== id) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte die endgültige Löschung bestätigen.</h1></section>'));
+              let purged;
+              try { purged = await cmsStore.purgeTrashedIssue(identity.uuid, id); }
+              catch (error) {
+                if (error.message === 'Eine Ausgabe mit begonnenem Mailversand kann nicht endgültig gelöscht werden.') return send(409, page('Nicht löschbar', '<section><h1>Für diese Ausgabe wurde ein Mailversand begonnen. Sie kann nicht endgültig gelöscht werden.</h1></section>'));
+                throw error;
+              }
+              if (!purged) return send(404, page('Nicht gefunden', '<section><h1>Diese Ausgabe ist nicht mehr im Papierkorb.</h1></section>'));
+              return redirect(`${base}editor/settings/?tab=trash`, 'Ausgabe endgültig gelöscht. Die Nummer ist wieder frei.');
             }
             if (path === `${base}notifications/save`) {
               const mode = form.get('mode');

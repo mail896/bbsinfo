@@ -143,7 +143,7 @@ function fakeCmsStore() {
   };
   return {
     events,
-    async listTrash(actor, editor = false) { return { updates: editor ? trash.updates : [], issues: editor ? trash.issues : [], contributions: trash.contributions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })), submissions: trash.submissions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })) }; },
+    async listTrash(actor, editor = false) { return { updates: editor ? trash.updates : [], issues: editor ? trash.issues.map((row) => ({ ...row, canPurge: issueMail.has(row.number) ? 0 : 1 })) : [], contributions: trash.contributions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })), submissions: trash.submissions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })) }; },
     async restoreTrash(actor, kind, id, editor = false) {
       const mapping = { update: ['updates', published], issue: ['issues', issues], contribution: ['contributions', contributions], submission: ['submissions', submissions] }[kind];
       if (!mapping || (['update', 'issue'].includes(kind) && !editor)) return false;
@@ -153,6 +153,15 @@ function fakeCmsStore() {
       const row = trash[name].splice(index, 1)[0];
       (kind === 'update' && row.status === 'draft' ? drafts : kind === 'issue' && row.status === 'draft' ? issueDrafts : active).push(row);
       events.push({ actor, action: `${kind}.restore` });
+      return true;
+    },
+    async purgeTrashedIssue(actor, id) {
+      const index = trash.issues.findIndex((row) => row.id === Number(id));
+      if (index < 0) return false;
+      const row = trash.issues[index];
+      if (issueMail.has(row.number)) throw new Error('Eine Ausgabe mit begonnenem Mailversand kann nicht endgültig gelöscht werden.');
+      trash.issues.splice(index, 1);
+      events.push({ actor, action: row.status === 'draft' ? 'issue.draft_purge' : 'issue.purge', type: 'issue', id: row.number || row.id, title: row.title });
       return true;
     },
     async getAppSettings() { return appSettings; },
@@ -392,6 +401,7 @@ test('Papierkorb schützt fremde Einreichungen und stellt Ausgaben mit derselben
     assert.doesNotMatch(trash, /name="kind" value="issue"/);
     assert.equal((await request(owner.base, '/bbsinfo/editor/settings/?tab=trash', { headers: { cookie } })).status, 403);
     assert.equal((await request(owner.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf, kind: 'issue', id: '1' }) })).status, 403);
+    assert.equal((await request(owner.base, '/bbsinfo/trash/purge-issue', { method: 'POST', headers, body: new URLSearchParams({ csrf, id: '1', confirm: '1' }) })).status, 403);
   } finally { await new Promise((resolve) => owner.app.close(resolve)); }
 
   const stranger = await setup(null, cms, { ...validInfo, 'iserv:uuid': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Fremd' });
@@ -417,6 +427,26 @@ test('Papierkorb schützt fremde Einreichungen und stellt Ausgaben mit derselben
     assert.match(trash, /BBS Info 93/);
     assert.equal((await request(editor.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf: editorCsrf, kind: 'issue', id: '1' }) })).status, 303);
     assert.equal((await request(editor.base, '/bbsinfo/issues/93', { headers: { cookie } })).status, 200);
+  } finally { await new Promise((resolve) => editor.app.close(resolve)); }
+});
+
+test('Redaktion löscht unversendete Ausgabe endgültig aus dem Papierkorb und gibt ihre Nummer frei', async () => {
+  const cms = fakeCmsStore();
+  const editor = await setup(null, cms);
+  try {
+    const cookie = await login(editor);
+    const html = await (await request(editor.base, '/bbsinfo/editor/issues/', { headers: { cookie } })).text();
+    const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(html)[1];
+    const headers = { cookie, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
+    await cms.createAndPublishIssue(uuid, 'Testausgabe', 'Text', '2026/27', '', []);
+    assert.equal((await request(editor.base, '/bbsinfo/editor/issues/delete', { method: 'POST', headers, body: new URLSearchParams({ csrf, number: '93', confirm: '93' }) })).status, 303);
+    const trash = await (await request(editor.base, '/bbsinfo/editor/settings/?tab=trash', { headers: { cookie } })).text();
+    assert.match(trash, /action="\/bbsinfo\/trash\/purge-issue"/);
+    assert.equal((await request(editor.base, '/bbsinfo/trash/purge-issue', { method: 'POST', headers, body: new URLSearchParams({ csrf, id: '1' }) })).status, 400);
+    assert.equal((await request(editor.base, '/bbsinfo/trash/purge-issue', { method: 'POST', headers, body: new URLSearchParams({ csrf, id: '1', confirm: '1' }) })).status, 303);
+    assert.equal((await request(editor.base, '/bbsinfo/trash/restore', { method: 'POST', headers, body: new URLSearchParams({ csrf, kind: 'issue', id: '1' }) })).status, 404);
+    assert.ok(cms.events.some((event) => event.action === 'issue.purge' && event.id === 93));
+    assert.equal(await cms.createAndPublishIssue(uuid, 'Nächster Test', 'Text', '2026/27', '', []), 93);
   } finally { await new Promise((resolve) => editor.app.close(resolve)); }
 });
 

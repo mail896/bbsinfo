@@ -144,6 +144,41 @@ test('Endgültige Bereinigung erhält Ausgabennummer bis zur Löschung und entfe
   assert.ok(calls.some((call) => typeof call === 'string' && call.startsWith('DELETE FROM issue_contributions')));
 });
 
+test('Manuelle endgültige Ausgabenlöschung räumt Verknüpfungen auf und gibt die Nummer mit Audit frei', async () => {
+  const { calls, pool } = transactionStore((sql) => {
+    if (sql.startsWith('SELECT title, number, status FROM issues')) return [{ title: 'Testausgabe', number: 93, status: 'published' }];
+    if (sql.startsWith('SELECT contribution_id AS id FROM issue_contributions')) return [{ id: 11 }];
+    return [];
+  });
+  assert.equal(await createCmsStore(pool).purgeTrashedIssue(actor, 7), true);
+  const queries = calls.filter((call) => call.sql);
+  const index = (prefix) => queries.findIndex((call) => call.sql.startsWith(prefix));
+  assert.ok(index('SELECT next_number') < index('SELECT title, number, status FROM issues'));
+  assert.ok(index('SELECT status FROM issue_mail_delivery') < index('DELETE FROM issues'));
+  assert.ok(index('DELETE FROM issue_submissions') < index('DELETE FROM issues'));
+  assert.ok(index('DELETE FROM issue_updates') < index('DELETE FROM issues'));
+  assert.ok(index('DELETE FROM issue_contributions') < index('DELETE FROM issues'));
+  assert.ok(index('UPDATE contributions SET status') < index('DELETE FROM issues'));
+  assert.ok(index('DELETE FROM issues') < index('UPDATE issue_sequence SET next_number'));
+  assert.deepEqual(queries[index('UPDATE issue_sequence SET next_number')].params, [93]);
+  assert.deepEqual(queries[index('INSERT INTO audit_events')].params.slice(0, 5), [actor, 'issue.purge', 'issue', '93', 'Testausgabe']);
+  assert.ok(calls.includes('commit'));
+});
+
+test('Begonnener Mailversand und wiederhergestellte Ausgabe blockieren die endgültige Löschung', async () => {
+  const { calls, pool } = transactionStore((sql) => {
+    if (sql.startsWith('SELECT title, number, status FROM issues')) return [{ title: 'Versandt', number: 93, status: 'published' }];
+    if (sql.startsWith('SELECT status FROM issue_mail_delivery')) return [{ status: 'sending' }];
+    return [];
+  });
+  await assert.rejects(createCmsStore(pool).purgeTrashedIssue(actor, 7), /begonnenem Mailversand/);
+  assert.ok(calls.includes('rollback'));
+  assert.ok(!calls.some((call) => call.sql?.startsWith('DELETE FROM issues')));
+  const absent = transactionStore(() => []);
+  assert.equal(await createCmsStore(absent.pool).purgeTrashedIssue(actor, 7), false);
+  assert.ok(!absent.calls.some((call) => call.sql?.startsWith('DELETE FROM issues')));
+});
+
 test('Gleichzeitig wiederhergestellter Steckbrief behält seine Datei', async () => {
   let removed = false;
   const connection = {
@@ -163,7 +198,7 @@ test('Gleichzeitig wiederhergestellter Steckbrief behält seine Datei', async ()
 });
 
 test('Papierkorb zeigt Ausgabe und private Einreichung als Text ohne HTML-Ausführung', () => {
-  const trash = { updates: [], issues: [{ id: 4, number: 94, title: '<img src=x>', status: 'published', deletedAtUtc: '2026-10-29 10:00:00' }], contributions: [{ id: 5, title: 'Test', body: '<script>alert(1)</script>', ownerName: 'Frau <Test>', deletedAtUtc: '2026-10-29 10:00:00' }], submissions: [{ id: 6, title: '<script>', ownerName: 'Herr Test', deletedAtUtc: '2026-10-29 10:00:00' }] };
+  const trash = { updates: [], issues: [{ id: 4, number: 94, title: '<img src=x>', status: 'published', canPurge: 1, deletedAtUtc: '2026-10-29 10:00:00' }], contributions: [{ id: 5, title: 'Test', body: '<script>alert(1)</script>', ownerName: 'Frau <Test>', deletedAtUtc: '2026-10-29 10:00:00' }], submissions: [{ id: 6, title: '<script>', ownerName: 'Herr Test', deletedAtUtc: '2026-10-29 10:00:00' }] };
   const html = trashPage(trash, 'csrf', true);
   assert.match(html, /BBS Info 94/);
   assert.match(html, /&lt;img src=x&gt;/);
@@ -173,6 +208,8 @@ test('Papierkorb zeigt Ausgabe und private Einreichung als Text ohne HTML-Ausfü
   assert.match(html, /href="\/bbsinfo\/trash\/submissions\/6\/file"/);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /name="kind" value="issue"/);
+  assert.match(html, /action="\/bbsinfo\/trash\/purge-issue"/);
+  assert.doesNotMatch(trashPage({ ...trash, issues: [{ ...trash.issues[0], canPurge: 0 }] }, 'csrf', true), /action="\/bbsinfo\/trash\/purge-issue"/);
   const settings = settingsPage({ mailSubject: 'Test', mailBody: '{link}', digestCadence: 'disabled' }, 'csrf', 'trash', [], false, [], trash);
   assert.match(settings, /Papierkorb/);
   assert.match(settings, /BBS Info 94/);
