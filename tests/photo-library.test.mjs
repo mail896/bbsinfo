@@ -9,7 +9,7 @@ import { Readable } from 'node:stream';
 import { runInNewContext } from 'node:vm';
 import { receivePhoto, photoFile, photoSha256, removePhotoFiles } from '../backend/photo-files.mjs';
 import { photoAlbumPage, photoDetailPage, photoIndexPage, photoMinePage, photoSetPage } from '../backend/photo-pages.mjs';
-import { searchPage } from '../backend/web-pages.mjs';
+import { home, searchPage } from '../backend/web-pages.mjs';
 import { photoStoreMethods } from '../backend/photo-store.mjs';
 
 const python = '/usr/bin/python3';
@@ -65,7 +65,15 @@ test('ZIP ordnet Originale stabil und nennt Herkunft; Albumausgabe escaped Namen
     const album = { id: 1, title: '<img src=x>', description: '', eventDate: null, photos: [{ id: 2, uploaderName: '<script>', sequenceNumber: 1 }] };
     assert.doesNotMatch(photoAlbumPage(album, 'csrf', false), /<img src=x>/);
     const photo = { id: 2, albumId: 1, sequenceNumber: 1, uploaderName: '<script>', capturedDate: null, originalName: 'test.jpg' };
-    assert.doesNotMatch(photoDetailPage(photo, album, [], 'csrf', { uuid, editor: false }), /<script>/);
+    const readerDetail = photoDetailPage(photo, album, [], 'csrf', { uuid, editor: false });
+    assert.doesNotMatch(readerDetail, /<script>/);
+    assert.doesNotMatch(readerDetail, /photos\/(date-edit|delete)/);
+    assert.match(readerDetail, /<h2>Kommentare<\/h2>/);
+    const editorDetail = photoDetailPage(photo, album, [], 'csrf', { uuid, editor: true });
+    assert.match(editorDetail, /photo-editor-tools/);
+    assert.match(editorDetail, /photos\/date-edit/);
+    assert.match(editorDetail, /photos\/delete/);
+    assert(editorDetail.indexOf('<h2>Kommentare</h2>') < editorDetail.indexOf('photo-editor-tools'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -85,8 +93,41 @@ test('Uploadstatus hat Fortschrittsanzeige und Redaktion sieht jedes Bild nur ei
   assert.doesNotMatch(review, /class="photo-grid"/);
   assert.match(review, /Bilder für die Library auswählen/);
   assert.match(review, /Gleiche Titel verbinden Einreichungen nicht automatisch/);
+  assert.match(review, /data-photo-review-form/);
+  assert.match(review, /data-photo-new-album-fields/);
+  assert.match(review, /data-photo-existing-album-note hidden/);
   const owner = photoSetPage(set, 'csrf', false, true);
   assert.doesNotMatch(owner, /<span>Test Person<\/span>/);
+});
+
+test('Albumwahl zeigt nur die passenden Angaben und Fotoaktionen teilen einen Farbakzent', async () => {
+  const source = await readFile(new URL('../design/web/photos.js', import.meta.url), 'utf8');
+  const fields = [{ disabled: false }, { disabled: false }, { disabled: false }];
+  const newAlbumFields = { hidden: false, querySelectorAll: () => fields };
+  const existingAlbumNote = { hidden: true };
+  const album = { value: '', addEventListener(name, listener) { if (name === 'change') this.change = listener; } };
+  const form = {
+    elements: { namedItem: (name) => name === 'albumId' ? album : null },
+    querySelector: (selector) => selector === '[data-photo-new-album-fields]' ? newAlbumFields : existingAlbumNote,
+  };
+  runInNewContext(source, {
+    document: { querySelector: (selector) => selector === '[data-photo-review-form]' ? form : null, addEventListener() {} },
+  });
+  assert.equal(newAlbumFields.hidden, false);
+  assert.equal(existingAlbumNote.hidden, true);
+  album.value = '7';
+  album.change();
+  assert.equal(newAlbumFields.hidden, true);
+  assert.equal(existingAlbumNote.hidden, false);
+  assert(fields.every((field) => field.disabled));
+  album.value = '';
+  album.change();
+  assert.equal(newAlbumFields.hidden, false);
+  assert(fields.every((field) => !field.disabled));
+
+  const start = home({ name: 'Redaktion', editor: true, auditOwner: false }, 'csrf', true, true, true, undefined, null, true);
+  assert.match(start, /class="photo-action" href="\/bbsinfo\/photos\/">Fotolibrary/);
+  assert.match(start, /class="photo-action" href="\/bbsinfo\/photos\/review">Fotoeinreichungen sichten/);
 });
 
 test('Fotolibrary bietet Jahre und Albumseiten; globale Suche verlinkt nur freigegebene Alben', async () => {

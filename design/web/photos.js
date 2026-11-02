@@ -8,6 +8,21 @@
     const title = form?.elements.namedItem('title');
     if (file?.webkitRelativePath && title && !title.value.trim()) title.value = file.webkitRelativePath.split('/')[0].replace(/[_-]+/g, ' ').slice(0, 200);
   });
+  const reviewForm = document.querySelector('[data-photo-review-form]');
+  if (reviewForm) {
+    const album = reviewForm.elements.namedItem('albumId');
+    const newAlbumFields = reviewForm.querySelector('[data-photo-new-album-fields]');
+    const existingAlbumNote = reviewForm.querySelector('[data-photo-existing-album-note]');
+    const syncAlbumChoice = () => {
+      const creatingAlbum = !album.value;
+      newAlbumFields.hidden = !creatingAlbum;
+      existingAlbumNote.hidden = creatingAlbum;
+      for (const field of newAlbumFields.querySelectorAll('input, textarea')) field.disabled = !creatingAlbum;
+    };
+    album.addEventListener('change', syncAlbumChoice);
+    if (typeof window !== 'undefined') window.addEventListener('pageshow', syncAlbumChoice);
+    syncAlbumChoice();
+  }
   const accepted = (file) => /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name) && file.size > 0 && file.size <= 40 * 1024 * 1024;
   function sendFile(setId, csrf, fileDate, body, onProgress, onProcessing) {
     return new Promise((resolve, reject) => {

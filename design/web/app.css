@@ -258,6 +258,20 @@ li {
   background: #fff1bd;
 }
 
+.home-nav .photo-action,
+.work-links .photo-action {
+  background: #e8f1f8;
+  border-color: #a9c5d8;
+  color: #204b68;
+}
+
+.home-nav .photo-action:hover,
+.home-nav .photo-action:focus-visible,
+.work-links .photo-action:hover,
+.work-links .photo-action:focus-visible {
+  background: #d5e8f4;
+}
+
 .home-nav .personal-action {
   background: #ebf6ed;
   border-color: #b8d9c0;
@@ -1864,11 +1878,16 @@ footer a {
 .photo-upload-progress progress::-webkit-progress-value { background: #288242; border-radius: .6rem; }
 .photo-upload-progress progress::-moz-progress-bar { background: #288242; border-radius: .6rem; }
 .photo-upload-progress output { min-width: 3.5rem; text-align: right; font-variant-numeric: tabular-nums; }
-.photo-viewer { display: flex; align-items: center; justify-content: center; gap: 1rem; background: #172332; border-radius: 1rem; padding: 1rem; min-height: 300px; }
-.photo-viewer img { max-width: min(100%, 900px); max-height: 76vh; object-fit: contain; }
+.photo-viewer { display: flex; align-items: center; justify-content: center; gap: 1rem; width: min(100%, 900px); margin: 0 auto; background: #172332; border-radius: 1rem; padding: 1rem; }
+.photo-viewer img { max-width: min(100%, 760px); max-height: 58vh; object-fit: contain; }
 .photo-viewer a { color: white; font-size: 2.5rem; text-decoration: none; padding: .5rem; }
 .photo-meta, .photo-comment { padding: 1rem 0; border-bottom: 1px solid #d4dce4; }
 .photo-comment form { margin: .5rem 0; }
+.photo-editor-tools { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #d4dce4; color: var(--muted); font-size: .88rem; }
+.photo-editor-tools summary { width: fit-content; cursor: pointer; font-weight: 650; }
+.photo-editor-tools form { max-width: 360px; margin: 1rem 0; }
+.photo-editor-tools input[type="date"] { max-width: 250px; }
+.photo-editor-tools button { padding: 6px 10px; font-size: .88rem; }
 .photo-picker-result { display: inline-flex; flex-direction: column; vertical-align: top; width: 130px; margin: .4rem; padding: .4rem; text-align: left; font-size: .85rem; overflow-wrap: anywhere; }
 .photo-picker-result img { width: 100%; height: 85px; object-fit: cover; margin-bottom: .4rem; }
 @media (max-width: 650px) { .photo-head { flex-direction: column; } .photo-viewer { gap: .2rem; padding: .3rem; } .photo-viewer a { font-size: 1.6rem; } }
