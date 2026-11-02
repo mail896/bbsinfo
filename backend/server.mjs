@@ -23,6 +23,7 @@ import { base, page, feedbackToast, landing, home, searchPage, updatesPage, noti
 const origin = 'https://apps.school.example';
 const publicAssets = new Map([
   [`${base}assets/app.css`, { path: fileURLToPath(new URL('../design/web/app.css', import.meta.url)), type: 'text/css; charset=utf-8' }],
+  [`${base}assets/theme.js`, { path: fileURLToPath(new URL('../design/web/theme.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/landing.js`, { path: fileURLToPath(new URL('../design/web/landing.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/editor.js`, { path: fileURLToPath(new URL('../design/web/editor.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/photos.js`, { path: fileURLToPath(new URL('../design/web/photos.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
@@ -302,6 +303,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
         const asset = publicAssets.get(path);
         const image = statSync(asset.path);
         if (path === `${base}assets/logo-mappe.png`) res.setHeader('Cache-Control', 'no-cache');
+        if (path === `${base}assets/theme.js`) res.setHeader('Cache-Control', 'private, max-age=86400');
         res.writeHead(200, { 'Content-Type': asset.type, 'Content-Length': image.size });
         if (req.method === 'HEAD') return res.end();
         createReadStream(asset.path).on('error', () => res.destroy()).pipe(res);

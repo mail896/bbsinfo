@@ -18,7 +18,7 @@
 
   function activate(textarea) {
     if (editors.has(textarea.id) || !window.Jodit) return;
-    const editor = window.Jodit.make(textarea, options);
+    const editor = window.Jodit.make(textarea, { ...options, theme: window.bbsInfoTheme?.isDark() ? 'dark' : 'default' });
     editors.set(textarea.id, editor);
     const workplace = editor.container.querySelector('.jodit-workplace');
     if (workplace) {
@@ -56,6 +56,15 @@
     }
     textarea.form?.addEventListener('submit', () => { textarea.value = editor.value; });
   }
+
+  document.addEventListener('bbsinfo:themechange', () => {
+    const dark = window.bbsInfoTheme?.isDark();
+    for (const editor of editors.values()) {
+      editor.o.theme = dark ? 'dark' : 'default';
+      editor.container.classList.toggle('jodit_theme_dark', dark);
+      editor.container.classList.toggle('jodit_theme_default', !dark);
+    }
+  });
 
   document.querySelectorAll('textarea[data-rich-editor]').forEach((textarea) => {
     const details = textarea.closest('details');

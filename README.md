@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.3.4** · 2. November 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.4.0** · 2. November 2026 · Idee und Konzeption: Marc Schulz
 
 BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Fotos, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 
@@ -16,7 +16,7 @@ BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurz
 - 30-Tage-Papierkorb für Updates, Ausgaben, private Beiträge und Steckbriefe; bereits angekündigte Ausgaben bleiben vor Löschung geschützt.
 - Die Redaktion kann offene Einreichungen und unverknüpfte übernommene Steckbriefe direkt in den Papierkorb verschieben und dort Beiträge aller Konten prüfen; persönliche Papierkörbe zeigen nur eigene offene Einreichungen.
 - Suche in neuen Inhalten und freigegebenen Fotoalben sowie im geschützten, teilweise per OCR erschlossenen historischen PDF-Archiv.
-- „Mein BBS Info“ bündelt eigene Beiträge, Steckbriefe und Fotos sowie Einstellungen und Papierkorb. In den Einstellungen sind Benachrichtigungen für Aktuelles und freigegebene Fotoalben getrennt auswählbar, mit gemeinsamem Rhythmus sofort, täglich oder wöchentlich. Vor jedem Versand wird die aktuelle IServ-Gruppenzugehörigkeit geprüft.
+- „Mein BBS Info“ bündelt eigene Beiträge, Steckbriefe und Fotos sowie Einstellungen und Papierkorb. Dort ist die Darstellung für diesen Browser auf Hell, Dunkel oder System einstellbar. Benachrichtigungen für Aktuelles und freigegebene Fotoalben sind getrennt auswählbar, mit gemeinsamem Rhythmus sofort, täglich oder wöchentlich. Vor jedem Versand wird die aktuelle IServ-Gruppenzugehörigkeit geprüft.
 - Getrennte Ausgaben-Mail mit Vorschau, bearbeitbarer Vorlage und ausdrücklicher Freigabe für einen Verteiler.
 - Audit-Log, Nutzungsstatistik, Suchauswertung, Filter und CSV-Export ausschließlich für die Administration.
 - Einheitliche Oberfläche für Desktop und Mobilgeräte.

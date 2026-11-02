@@ -8,7 +8,7 @@ import { createApp, currentSchoolYear, readSettings } from '../backend/server.mj
 import { issueNotice, digestNotice, readMailConfig, sendIssueNotice, sendDigestTest, TEST_RECIPIENT } from '../backend/mail.mjs';
 import { renderIssuePdf } from '../backend/issue-pdf.mjs';
 import { defaultAppSettings } from '../backend/app-settings.mjs';
-import { auditPage, home, issuesPage, statsPage } from '../backend/web-pages.mjs';
+import { auditPage, home, issuesPage, notificationsPage, statsPage } from '../backend/web-pages.mjs';
 
 const uuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const settings = { clientId: 'test', clientSecret: 'test', auditOwnerUuid: uuid, readerGroupName: 'Kollegium' };
@@ -37,6 +37,13 @@ test('Startseite kennzeichnet gekürzte Updates und führt zum vollständigen Be
   assert.match(html, /href="\/bbsinfo\/updates\/6">Zweite Meldung/);
   assert.doesNotMatch(html, /Dieser Text gehört nicht auf die Startseite/);
   assert.equal([...html.matchAll(/Weiterlesen →/g)].length, 1);
+});
+
+test('Arbeitsbereich trennt Redaktion und Verwaltung; persönliche Einstellungen bieten drei Farbmodi', () => {
+  const dashboard = home({ name: 'Redaktion', editor: true, auditOwner: true }, 'csrf', true, true, true, undefined, null, true);
+  assert.match(dashboard, /class="work-links-main">.*Beiträge bearbeiten.*Ausgaben bearbeiten.*Fotoeinreichungen sichten.*<\/div><div class="work-links-admin">.*Einstellungen.*Audit-Log.*Nutzungsstatistik.*<\/div>/);
+  const settings = notificationsPage(null, 'csrf', true, false, true, true);
+  assert.match(settings, /data-theme-choice><option value="system">System<\/option><option value="light">Hell<\/option><option value="dark">Dunkel<\/option>/);
 });
 
 test('Lange Seitenlisten zeigen Anfang, aktuelle Umgebung und Ende mit Auslassung', () => {
@@ -643,6 +650,7 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     assert.match(landing, /assets\/logo-mappe\.png/);
     assert.match(landing, /assets\/landing-steckbriefe-back\.webp/);
     assert.match(landing, /assets\/app\.css/);
+    assert.match(landing, /<script src="\/bbsinfo\/assets\/theme\.js\?v=1\.4\.0"><\/script><link rel="stylesheet"/);
     assert.match(landing, /landing-flip/);
     assert.match(landing, /landing-title/);
     assert.match(landing, /Info Mappe/);
@@ -659,6 +667,10 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     assert.equal(stylesheet.status, 200);
     assert.match(stylesheet.headers.get('content-type'), /^text\/css/);
     assert.match(await stylesheet.text(), /prefers-reduced-motion/);
+    const themeScript = await request(fixture.base, '/bbsinfo/assets/theme.js');
+    assert.equal(themeScript.status, 200);
+    assert.match(themeScript.headers.get('content-type'), /^text\/javascript/);
+    assert.equal(themeScript.headers.get('cache-control'), 'private, max-age=86400');
     const animation = await request(fixture.base, '/bbsinfo/assets/landing.js');
     assert.equal(animation.status, 200);
     assert.match(animation.headers.get('content-type'), /^text\/javascript/);
