@@ -29,7 +29,7 @@ export async function deliverPendingUpdates(store, config, mode, send = sendSubs
   }
   let delivered = 0;
   for (const [userUuid, group] of grouped) {
-    const ids = group.updates.map((row) => Number(row.id));
+    const ids = group.updates.map((row) => row.kind === 'album' ? `album:${Number(row.id)}` : Number(row.id));
     try {
       if (verifyGroup && (await verifyGroup(userUuid, group.email)) !== true) continue;
     } catch (error) {
@@ -56,7 +56,7 @@ export async function deliverPendingUpdates(store, config, mode, send = sendSubs
     } catch {
       try { await store.finishUpdateMail(userUuid, ids, false); }
       catch { process.stderr.write('BBS Info: Update-Mail konnte nicht abgeschlossen werden; kein erneuter Versand.\n'); }
-      process.stderr.write('BBS Info: Update-Mailstatus unklar; kein automatischer erneuter Versand.\n');
+      process.stderr.write('BBS Info: Benachrichtigungs-Mailstatus unklar; kein automatischer erneuter Versand.\n');
       continue;
     }
     try {

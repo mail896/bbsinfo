@@ -55,7 +55,7 @@ function auditFilterConditions(filters) {
   if (actor) {
     if (UUID.test(actor)) { clauses.push('e.actor_uuid = ?'); params.push(actor.toLowerCase()); }
     else {
-      clauses.push("(LOCATE(LOWER(?), LOWER(p.display_name)) > 0 OR (e.action IN ('update.mail_start', 'update.mail_sent', 'update.mail_uncertain') AND LOCATE(LOWER(?), 'bbs info') > 0))");
+      clauses.push("(LOCATE(LOWER(?), LOWER(p.display_name)) > 0 OR (e.action IN ('update.mail_start', 'update.mail_sent', 'update.mail_uncertain', 'photo_album.mail_start', 'photo_album.mail_sent', 'photo_album.mail_uncertain', 'notification.mail_start', 'notification.mail_sent', 'notification.mail_uncertain') AND LOCATE(LOWER(?), 'bbs info') > 0))");
       params.push(actor, actor);
     }
   }
@@ -129,6 +129,20 @@ function validUpdateId(value) {
   const id = Number(value);
   if (!Number.isSafeInteger(id) || id < 1 || id > 4294967295) throw new Error('Ungültige Update-ID.');
   return id;
+}
+
+function mailSelection(values) {
+  if (!Array.isArray(values) || !values.length || values.length > 50) throw new Error('Ungültige Mailauswahl.');
+  const updates = [], albums = [];
+  for (const value of values) {
+    if (typeof value === 'string' && value.startsWith('album:')) {
+      const event = Number(value.slice(6));
+      if (!Number.isSafeInteger(event) || event < 1) throw new Error('Ungültige Albumereignis-ID.');
+      albums.push(event);
+    } else updates.push(validUpdateId(value));
+  }
+  if (new Set(updates).size !== updates.length || new Set(albums).size !== albums.length) throw new Error('Doppelte Mailauswahl.');
+  return { updates, albums };
 }
 
 function validText(title, body, bodyHtml = null) {
@@ -272,10 +286,10 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (Number(rows[0]?.n) !== 20) throw new Error('BBS-Info-Datenbankschema fehlt.');
       const fields = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'updates' AND column_name IN ('body_html', 'deleted_at', 'deleted_by', 'mail_suppressed')) OR (table_name = 'contributions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'submissions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'issues' AND column_name IN ('body_html', 'deleted_at', 'deleted_by')) OR (table_name = 'issue_updates' AND column_name = 'snapshot_body_html') OR (table_name = 'audit_events' AND column_name = 'object_title') OR (table_name = 'audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES') OR (table_name = 'iserv_identities' AND column_name = 'email') OR (table_name = 'update_subscriptions' AND column_name = 'mode'))");
       if (Number(fields[0]?.n) !== 16) throw new Error('BBS-Info-Datenbankspalten fehlen.');
-      const photos = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('photo_albums', 'photo_sets', 'photo_assets', 'photo_comments', 'photo_comment_revisions')");
-      if (Number(photos[0]?.n) !== 5) throw new Error('BBS-Info-Datenbankschema fehlt.');
-      const photoField = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'editor_images' AND column_name = 'source_photo_id'");
-      if (Number(photoField[0]?.n) !== 1) throw new Error('BBS-Info-Datenbankspalten fehlen.');
+      const photos = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('photo_albums', 'photo_sets', 'photo_assets', 'photo_comments', 'photo_comment_revisions', 'photo_album_notifications', 'photo_album_mail_delivery')");
+      if (Number(photos[0]?.n) !== 7) throw new Error('BBS-Info-Datenbankschema fehlt.');
+      const photoField = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'editor_images' AND column_name = 'source_photo_id') OR (table_name = 'update_subscriptions' AND column_name IN ('notify_updates', 'notify_albums', 'albums_since')))");
+      if (Number(photoField[0]?.n) !== 4) throw new Error('BBS-Info-Datenbankspalten fehlen.');
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
     },
     async rememberIdentity(identity) {
@@ -525,14 +539,26 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const rows = await pool.query('SELECT mode FROM update_subscriptions WHERE user_uuid = ?', [validActor(actor)]);
       return rows[0]?.mode || 'off';
     },
-    async setSubscription(actor, mode) {
+    async subscriptionPreferences(actor) {
+      const rows = await pool.query('SELECT mode, notify_updates AS notifyUpdates, notify_albums AS notifyAlbums FROM update_subscriptions WHERE user_uuid = ?', [validActor(actor)]);
+      return rows[0] ? { mode: rows[0].mode, notifyUpdates: Boolean(rows[0].notifyUpdates), notifyAlbums: Boolean(rows[0].notifyAlbums) } : { mode: 'off', notifyUpdates: true, notifyAlbums: false };
+    },
+    async setSubscription(actor, selection) {
       const uuid = validActor(actor);
+      const mode = typeof selection === 'string' ? selection : selection?.mode;
+      const notifyUpdates = typeof selection === 'string' ? true : selection?.notifyUpdates === true;
+      const notifyAlbums = typeof selection === 'string' ? false : selection?.notifyAlbums === true;
       if (!['off', 'instant', 'daily', 'weekly'].includes(mode)) throw new Error('Ungültiger Abo-Status.');
+      if (mode !== 'off' && !notifyUpdates && !notifyAlbums) throw new Error('Bitte mindestens ein Thema wählen.');
       return transact(async (conn) => {
-        const current = await conn.query('SELECT mode FROM update_subscriptions WHERE user_uuid = ? FOR UPDATE', [uuid]);
-        if (current[0]?.mode === mode) return;
-        await conn.query('INSERT INTO update_subscriptions (user_uuid, enabled, mode) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), mode = VALUES(mode), changed_at = UTC_TIMESTAMP(6)', [uuid, mode !== 'off', mode]);
-        await audit(conn, uuid, mode === 'off' ? 'subscription.disable' : 'subscription.enable', 'subscription', uuid);
+        const current = await conn.query('SELECT mode, notify_updates AS notifyUpdates, notify_albums AS notifyAlbums FROM update_subscriptions WHERE user_uuid = ? FOR UPDATE', [uuid]);
+        const previous = current[0];
+        if (previous?.mode === mode && Boolean(previous.notifyUpdates) === notifyUpdates && Boolean(previous.notifyAlbums) === notifyAlbums) return;
+        const resetUpdates = !previous || previous.mode !== mode || (!previous.notifyUpdates && notifyUpdates);
+        const resetAlbums = mode !== 'off' && notifyAlbums && (!previous || previous.mode !== mode || !previous.notifyAlbums);
+        await conn.query('INSERT INTO update_subscriptions (user_uuid, enabled, mode, notify_updates, notify_albums, albums_since) VALUES (?, ?, ?, ?, ?, IF(?, UTC_TIMESTAMP(6), NULL)) ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), mode = VALUES(mode), notify_updates = VALUES(notify_updates), notify_albums = VALUES(notify_albums), changed_at = IF(?, UTC_TIMESTAMP(6), changed_at), albums_since = IF(?, UTC_TIMESTAMP(6), albums_since)', [uuid, mode !== 'off', mode, notifyUpdates, notifyAlbums, resetAlbums, resetUpdates, resetAlbums]);
+        const action = mode === 'off' ? previous?.mode && previous.mode !== 'off' ? 'subscription.disable' : 'subscription.change' : previous?.mode && previous.mode !== 'off' ? 'subscription.change' : 'subscription.enable';
+        await audit(conn, uuid, action, 'subscription', uuid);
       });
     },
     async pendingUpdateMail(mode, limit = 50, cutoffUtc = null, afterUserUuid = null) {
@@ -540,44 +566,74 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       if (mode === 'daily' && !/^\d{4}-\d{2}-\d{2} \d{2}:00:00$/.test(cutoffUtc || '')) throw new Error('Ungültiges tägliches Versandfenster.');
       const cursor = afterUserUuid === null ? null : validActor(afterUserUuid);
       const cursorFilter = cursor ? ' AND s.user_uuid > ?' : '';
-      const dailyFilter = mode === 'daily' ? ' AND u.published_at < ? AND NOT EXISTS (SELECT 1 FROM update_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?)' : '';
-      return pool.query(`SELECT s.user_uuid AS userUuid, p.display_name AS name, p.email, u.id, u.title, u.body, u.body_html AS bodyHtml FROM update_subscriptions s JOIN iserv_identities p ON p.user_uuid = s.user_uuid JOIN updates u ON u.status = 'published' AND u.deleted_at IS NULL AND u.mail_suppressed = FALSE AND u.published_at >= s.changed_at LEFT JOIN update_mail_delivery d ON d.user_uuid = s.user_uuid AND d.update_id = u.id WHERE s.mode = ? AND p.email IS NOT NULL AND LOWER(p.email) <> 'staff@school.example' AND d.update_id IS NULL${cursorFilter}${dailyFilter} ORDER BY s.user_uuid, u.published_at, u.id LIMIT ${limit}`, [mode, ...(cursor ? [cursor] : []), ...(mode === 'daily' ? [cutoffUtc, cutoffUtc] : [])]);
+      const dailyFilter = (published) => mode === 'daily' ? ` AND ${published} < ? AND NOT EXISTS (SELECT 1 FROM update_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?) AND NOT EXISTS (SELECT 1 FROM photo_album_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?)` : '';
+      const params = () => [mode, ...(cursor ? [cursor] : []), ...(mode === 'daily' ? [cutoffUtc, cutoffUtc, cutoffUtc] : [])];
+      return pool.query(`SELECT * FROM (
+        SELECT s.user_uuid AS userUuid, p.display_name AS name, p.email, 'update' AS kind, u.id, u.title, u.body, u.body_html AS bodyHtml, NULL AS photoCount, NULL AS albumId, NULL AS albumAction, u.published_at AS publishedAt
+        FROM update_subscriptions s JOIN iserv_identities p ON p.user_uuid = s.user_uuid JOIN updates u ON u.status = 'published' AND u.deleted_at IS NULL AND u.mail_suppressed = FALSE AND u.published_at >= s.changed_at
+        LEFT JOIN update_mail_delivery d ON d.user_uuid = s.user_uuid AND d.update_id = u.id
+        WHERE s.mode = ? AND s.notify_updates = 1 AND p.email IS NOT NULL AND LOWER(p.email) <> 'staff@school.example' AND d.update_id IS NULL${cursorFilter}${dailyFilter('u.published_at')}
+        UNION ALL
+        SELECT s.user_uuid AS userUuid, p.display_name AS name, p.email, 'album' AS kind, n.id, n.album_title AS title, '' AS body, NULL AS bodyHtml, n.photo_count AS photoCount, n.album_id AS albumId, n.kind AS albumAction, n.published_at AS publishedAt
+        FROM update_subscriptions s JOIN iserv_identities p ON p.user_uuid = s.user_uuid JOIN photo_album_notifications n ON n.published_at >= s.albums_since JOIN photo_albums b ON b.id = n.album_id AND b.deleted_at IS NULL
+        LEFT JOIN photo_album_mail_delivery d ON d.user_uuid = s.user_uuid AND d.event_id = n.id
+        WHERE s.mode = ? AND s.notify_albums = 1 AND s.albums_since IS NOT NULL AND p.email IS NOT NULL AND LOWER(p.email) <> 'staff@school.example' AND d.event_id IS NULL${cursorFilter}${dailyFilter('n.published_at')}
+      ) notice ORDER BY userUuid, publishedAt, id LIMIT ${limit}`, [...params(), ...params()]);
     },
     async claimUpdateMail(actor, updateIds, mode, cutoffUtc = null) {
       const uuid = validActor(actor);
-      if (!['instant', 'daily', 'weekly'].includes(mode) || !Array.isArray(updateIds) || !updateIds.length || updateIds.length > 50) throw new Error('Ungültige Mailauswahl.');
+      if (!['instant', 'daily', 'weekly'].includes(mode)) throw new Error('Ungültige Mailauswahl.');
       if (mode === 'daily' && !/^\d{4}-\d{2}-\d{2} \d{2}:00:00$/.test(cutoffUtc || '')) throw new Error('Ungültiges tägliches Versandfenster.');
-      const ids = updateIds.map(validUpdateId);
-      if (new Set(ids).size !== ids.length) throw new Error('Doppelte Mailauswahl.');
+      const { updates, albums } = mailSelection(updateIds);
       return transact(async (conn) => {
-        const dailyFilter = mode === 'daily' ? ' AND u.published_at < ? AND NOT EXISTS (SELECT 1 FROM update_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?)' : '';
-        const selected = await conn.query(`SELECT u.id, p.display_name AS recipientName FROM updates u JOIN update_subscriptions s ON s.user_uuid = ? AND s.mode = ? AND u.published_at >= s.changed_at JOIN iserv_identities p ON p.user_uuid = s.user_uuid LEFT JOIN update_mail_delivery d ON d.user_uuid = ? AND d.update_id = u.id WHERE u.status = 'published' AND u.deleted_at IS NULL AND u.mail_suppressed = FALSE AND d.update_id IS NULL AND u.id IN (${ids.map(() => '?').join(',')})${dailyFilter} FOR UPDATE`, [uuid, mode, uuid, ...ids, ...(mode === 'daily' ? [cutoffUtc, cutoffUtc] : [])]);
-        if (selected.length !== ids.length) return false;
-        for (const id of ids) await conn.query("INSERT INTO update_mail_delivery (user_uuid, update_id, status) VALUES (?, ?, 'sending')", [uuid, id]);
-        await writeAudit(conn, null, 'update.mail_start', 'subscription', uuid, selected[0].recipientName || null);
+        const dailyFilter = (published) => mode === 'daily' ? ` AND ${published} < ? AND NOT EXISTS (SELECT 1 FROM update_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?) AND NOT EXISTS (SELECT 1 FROM photo_album_mail_delivery recent WHERE recent.user_uuid = s.user_uuid AND recent.requested_at >= ?)` : '';
+        const dailyParams = mode === 'daily' ? [cutoffUtc, cutoffUtc, cutoffUtc] : [];
+        let selected = [];
+        if (updates.length) {
+          selected = await conn.query(`SELECT u.id, p.display_name AS recipientName FROM updates u JOIN update_subscriptions s ON s.user_uuid = ? AND s.mode = ? AND s.notify_updates = 1 AND u.published_at >= s.changed_at JOIN iserv_identities p ON p.user_uuid = s.user_uuid LEFT JOIN update_mail_delivery d ON d.user_uuid = ? AND d.update_id = u.id WHERE u.status = 'published' AND u.deleted_at IS NULL AND u.mail_suppressed = FALSE AND d.update_id IS NULL AND u.id IN (${updates.map(() => '?').join(',')})${dailyFilter('u.published_at')} FOR UPDATE`, [uuid, mode, uuid, ...updates, ...dailyParams]);
+          if (selected.length !== updates.length) return false;
+        }
+        let selectedAlbums = [];
+        if (albums.length) {
+          selectedAlbums = await conn.query(`SELECT n.id, p.display_name AS recipientName FROM photo_album_notifications n JOIN update_subscriptions s ON s.user_uuid = ? AND s.mode = ? AND s.notify_albums = 1 AND s.albums_since IS NOT NULL AND n.published_at >= s.albums_since JOIN iserv_identities p ON p.user_uuid = s.user_uuid JOIN photo_albums b ON b.id = n.album_id AND b.deleted_at IS NULL LEFT JOIN photo_album_mail_delivery d ON d.user_uuid = ? AND d.event_id = n.id WHERE d.event_id IS NULL AND n.id IN (${albums.map(() => '?').join(',')})${dailyFilter('n.published_at')} FOR UPDATE`, [uuid, mode, uuid, ...albums, ...dailyParams]);
+          if (selectedAlbums.length !== albums.length) return false;
+        }
+        for (const id of updates) await conn.query("INSERT INTO update_mail_delivery (user_uuid, update_id, status) VALUES (?, ?, 'sending')", [uuid, id]);
+        for (const id of albums) await conn.query("INSERT INTO photo_album_mail_delivery (user_uuid, event_id, status) VALUES (?, ?, 'sending')", [uuid, id]);
+        await writeAudit(conn, null, albums.length ? updates.length ? 'notification.mail_start' : 'photo_album.mail_start' : 'update.mail_start', 'subscription', uuid, (selected[0] || selectedAlbums[0]).recipientName || null);
         return true;
       });
     },
     async releaseUpdateMail(actor, updateIds) {
       const uuid = validActor(actor);
-      if (!Array.isArray(updateIds) || !updateIds.length || updateIds.length > 50) throw new Error('Ungültige Mailauswahl.');
-      const ids = updateIds.map(validUpdateId);
-      if (new Set(ids).size !== ids.length) throw new Error('Doppelte Mailauswahl.');
+      const { updates, albums } = mailSelection(updateIds);
       return transact(async (conn) => {
-        const result = await conn.query(`DELETE FROM update_mail_delivery WHERE user_uuid = ? AND status = 'sending' AND update_id IN (${ids.map(() => '?').join(',')})`, [uuid, ...ids]);
-        if (Number(result.affectedRows) !== ids.length) throw new Error('Mailreservierung konnte nicht freigegeben werden.');
+        if (updates.length) {
+          const result = await conn.query(`DELETE FROM update_mail_delivery WHERE user_uuid = ? AND status = 'sending' AND update_id IN (${updates.map(() => '?').join(',')})`, [uuid, ...updates]);
+          if (Number(result.affectedRows) !== updates.length) throw new Error('Mailreservierung konnte nicht freigegeben werden.');
+        }
+        if (albums.length) {
+          const result = await conn.query(`DELETE FROM photo_album_mail_delivery WHERE user_uuid = ? AND status = 'sending' AND event_id IN (${albums.map(() => '?').join(',')})`, [uuid, ...albums]);
+          if (Number(result.affectedRows) !== albums.length) throw new Error('Mailreservierung konnte nicht freigegeben werden.');
+        }
       });
     },
     async finishUpdateMail(actor, updateIds, sent) {
       const uuid = validActor(actor);
-      if (typeof sent !== 'boolean' || !Array.isArray(updateIds) || !updateIds.length || updateIds.length > 50) throw new Error('Ungültiger Mailstatus.');
+      if (typeof sent !== 'boolean') throw new Error('Ungültiger Mailstatus.');
+      const { updates, albums } = mailSelection(updateIds);
       await transact(async (conn) => {
-        for (const id of updateIds.map(validUpdateId)) {
+        for (const id of updates) {
           const result = await conn.query("UPDATE update_mail_delivery SET status = ?, finished_at = UTC_TIMESTAMP(6) WHERE user_uuid = ? AND update_id = ? AND status = 'sending'", [sent ? 'sent' : 'uncertain', uuid, id]);
           if (Number(result.affectedRows) !== 1) throw new Error('Mailstatus konnte nicht abgeschlossen werden.');
         }
+        for (const id of albums) {
+          const result = await conn.query("UPDATE photo_album_mail_delivery SET status = ?, finished_at = UTC_TIMESTAMP(6) WHERE user_uuid = ? AND event_id = ? AND status = 'sending'", [sent ? 'sent' : 'uncertain', uuid, id]);
+          if (Number(result.affectedRows) !== 1) throw new Error('Mailstatus konnte nicht abgeschlossen werden.');
+        }
         const recipient = await conn.query('SELECT display_name AS name FROM iserv_identities WHERE user_uuid = ?', [uuid]);
-        await writeAudit(conn, null, sent ? 'update.mail_sent' : 'update.mail_uncertain', 'subscription', uuid, recipient[0]?.name || null);
+        const prefix = albums.length ? updates.length ? 'notification' : 'photo_album' : 'update';
+        await writeAudit(conn, null, `${prefix}.mail_${sent ? 'sent' : 'uncertain'}`, 'subscription', uuid, recipient[0]?.name || null);
       }, true);
     },
     async recordSearch(actor, term, source) {
@@ -689,7 +745,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
     },
     async markIssueUpdatesMailed(number) {
       const n = validUpdateId(number);
-      await pool.query("INSERT IGNORE INTO update_mail_delivery (user_uuid, update_id, status, requested_at, finished_at) SELECT s.user_uuid, iu.update_id, 'sent', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6) FROM issues i JOIN issue_updates iu ON iu.issue_id = i.id JOIN updates u ON u.id = iu.update_id JOIN update_subscriptions s ON s.mode IN ('instant', 'daily', 'weekly') AND u.published_at >= s.changed_at WHERE i.number = ? AND i.status = 'published' AND i.deleted_at IS NULL AND u.deleted_at IS NULL AND iu.update_id IS NOT NULL", [n]);
+      await pool.query("INSERT IGNORE INTO update_mail_delivery (user_uuid, update_id, status, requested_at, finished_at) SELECT s.user_uuid, iu.update_id, 'sent', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6) FROM issues i JOIN issue_updates iu ON iu.issue_id = i.id JOIN updates u ON u.id = iu.update_id JOIN update_subscriptions s ON s.mode IN ('instant', 'daily', 'weekly') AND s.notify_updates = 1 AND u.published_at >= s.changed_at WHERE i.number = ? AND i.status = 'published' AND i.deleted_at IS NULL AND u.deleted_at IS NULL AND iu.update_id IS NOT NULL", [n]);
     },
     async createIssueDraft(actor, title, body, schoolYear, period, updateIds, bodyHtml = null) {
       const uuid = validActor(actor);

@@ -147,8 +147,9 @@ function fakeCmsStore() {
     async createDraft(actor, title, body, submissionIds = [], bodyHtml = null) { const id = drafts.length + published.length + 1; drafts.push({ id, title, body, bodyHtml, updatedAt: '26.10.2026 12:00', attachments: submissionIds.map((fileId) => submissions.find((item) => item.id === Number(fileId))) }); events.push({ actor, action: 'update.create', type: 'update', id }); return id; },
     async editUpdate(actor, id, title, body, mode, bodyHtml = null) { const row = (mode === 'draft_edit' ? drafts : published).find((item) => item.id === Number(id)); if (!row) return false; Object.assign(row, { title, body, bodyHtml }); events.push({ actor, action: mode === 'draft_edit' ? 'update.edit' : 'update.published_edit', type: 'update', id: Number(id) }); return true; },
     async publishUpdate(actor, id) { const index = drafts.findIndex((row) => row.id === Number(id)); if (index < 0) return false; published.push({ ...drafts.splice(index, 1)[0], publishedAt: '26.10.2026 12:00' }); events.push({ actor, action: 'update.publish' }); return true; },
-    async subscriptionMode(actor) { return subscriptions.get(actor) || 'off'; },
-    async setSubscription(actor, mode) { subscriptions.set(actor, mode); events.push({ actor, action: mode !== 'off' ? 'subscription.enable' : 'subscription.disable' }); },
+    async subscriptionMode(actor) { return subscriptions.get(actor)?.mode || 'off'; },
+    async subscriptionPreferences(actor) { return subscriptions.get(actor) || { mode: 'off', notifyUpdates: true, notifyAlbums: false }; },
+    async setSubscription(actor, preferences) { subscriptions.set(actor, preferences); events.push({ actor, action: preferences.mode !== 'off' ? 'subscription.enable' : 'subscription.disable' }); },
     async recordSearch(actor, term, source) { events.push({ actor, action: 'search.term', term, source }); },
     async listOwnContributions(actor) { return contributions.filter((item) => item.ownerUuid === actor); },
     async listSubmittedContributions() { return contributions.filter((item) => item.status === 'submitted').map((item) => ({ ...item, author: identities.get(item.ownerUuid) })); },
@@ -157,7 +158,7 @@ function fakeCmsStore() {
     async deleteContribution(actor, id, editor = false) { const index = contributions.findIndex((item) => item.id === Number(id) && (editor || item.ownerUuid === actor) && item.status === 'submitted'); if (index < 0) return false; trash.contributions.push({ ...contributions.splice(index, 1)[0], deletedAtUtc: '2026-10-29 10:00:00' }); return true; },
     async listAudit(before, limit, filters = {}) { return events.map((event, id) => ({ id, occurredAt: '2026-10-26 12:00:00', actorUuid: event.actor, actorName: identities.get(event.actor), action: event.action, objectType: event.type, objectId: event.id, objectTitle: event.title || (event.type === 'update' ? [...drafts, ...published].find((row) => row.id === event.id)?.title : null) })).filter((event) => (!filters.actor || event.actorUuid === filters.actor || event.actorName?.toLowerCase().includes(filters.actor.toLowerCase())) && (!filters.action || event.action === filters.action)); },
     async listAuditPage(page = 1, filters = {}, through = null) { const rows = (await this.listAudit(null, 1000, filters)).filter((row) => through === null || row.id <= Number(through)).reverse(); return { events: rows.slice((page - 1) * 50, page * 50), hasMore: rows.length > page * 50, page, pageCount: Math.max(1, Math.ceil(rows.length / 50)), through: through || String(rows[0]?.id || '') }; },
-    async listUsageStats(days = 30) { return { days, daily: [{ day: '26.10.2026', action: 'session.login', eventCount: events.filter((event) => event.action === 'session.login').length }], topContent: [], searchTerms: [], searchPeople: [], activeUsers: 1, subscriptions: [...subscriptions.values()].filter((mode) => mode !== 'off').length }; },
+    async listUsageStats(days = 30) { return { days, daily: [{ day: '26.10.2026', action: 'session.login', eventCount: events.filter((event) => event.action === 'session.login').length }], topContent: [], searchTerms: [], searchPeople: [], activeUsers: 1, subscriptions: [...subscriptions.values()].filter((selection) => selection.mode !== 'off').length }; },
     async listPublishedIssues() { return issues; },
     async searchPublished(query) { const term = query.toLocaleLowerCase('de'); return { updates: published.filter((row) => `${row.title} ${row.body}`.toLocaleLowerCase('de').includes(term)).map((row) => ({ id: row.id, title: row.title, excerpt: row.body })), issues: issues.filter((row) => `${row.title} ${row.body} ${row.updates.map((item) => item.body).join(' ')}`.toLocaleLowerCase('de').includes(term)).map((row) => ({ number: row.number, title: row.title, excerpt: row.body })) }; },
     async listIssueDrafts() { return issueDrafts; },
@@ -587,8 +588,9 @@ test('Updates: Redaktion veröffentlicht, Kollegium liest und verwaltet eigenes 
     const search = await request(reader.base, '/bbsinfo/search/?q=Bearbeiteter', { headers: { cookie: sid } });
     assert.equal(search.status, 200);
     assert.match(await search.text(), /Bearbeiteter Text/);
-    const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(html)[1];
-    assert.equal((await request(reader.base, '/bbsinfo/subscribe', { method: 'POST', headers, body: new URLSearchParams({ csrf, mode: 'weekly' }) })).status, 303);
+    const notificationsHtml = await (await request(reader.base, '/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(notificationsHtml)[1];
+    assert.equal((await request(reader.base, '/bbsinfo/notifications/save', { method: 'POST', headers, body: new URLSearchParams({ csrf, mode: 'weekly', updates: 'yes' }) })).status, 303);
     assert.equal(await cms.subscriptionMode(readerUuid), 'weekly');
     assert.equal(cms.events.some((event) => event.actor === readerUuid && event.action === 'page.view'), true);
   } finally { await new Promise((resolve) => reader.app.close(resolve)); }
@@ -608,19 +610,20 @@ test('Gespeicherte Aboauswahl zeigt einmalige Bestätigung und persönlichen Ver
     const headers = { cookie: sid, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
     const initial = await (await request(fixture.base, '/bbsinfo/updates/', { headers: { cookie: sid } })).text();
     assert.doesNotMatch(initial, /noch nicht freigegeben/);
-    const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(initial)[1];
-    const saved = await request(fixture.base, '/bbsinfo/subscribe', { method: 'POST', headers, body: new URLSearchParams({ csrf, mode: 'instant' }) });
+    const notifications = await (await request(fixture.base, '/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(notifications)[1];
+    const saved = await request(fixture.base, '/bbsinfo/notifications/save', { method: 'POST', headers, body: new URLSearchParams({ csrf, mode: 'instant', updates: 'yes' }) });
     assert.equal(saved.status, 303);
     assert.equal(await cms.subscriptionMode(account['iserv:uuid']), 'instant');
-    const first = await (await request(fixture.base, '/bbsinfo/updates/', { headers: { cookie: sid } })).text();
-    assert.match(first, /Sofortige Update-Mails eingeschaltet/);
+    const first = await (await request(fixture.base, '/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    assert.match(first, /Benachrichtigungsauswahl gespeichert/);
     assert.match(first, /data-feedback/);
-    const second = await (await request(fixture.base, '/bbsinfo/updates/', { headers: { cookie: sid } })).text();
-    assert.doesNotMatch(second, /Sofortige Update-Mails eingeschaltet/);
+    const second = await (await request(fixture.base, '/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    assert.doesNotMatch(second, /Benachrichtigungsauswahl gespeichert/);
     assert.match(second, /Täglich um 18:00 Uhr/);
-    assert.equal((await request(fixture.base, '/bbsinfo/subscribe', { method: 'POST', headers, body: new URLSearchParams({ csrf, mode: 'daily' }) })).status, 303);
-    const daily = await (await request(fixture.base, '/bbsinfo/updates/', { headers: { cookie: sid } })).text();
-    assert.match(daily, /Tägliche Update-Mails eingeschaltet/);
+    assert.equal((await request(fixture.base, '/bbsinfo/notifications/save', { method: 'POST', headers, body: new URLSearchParams({ csrf, mode: 'daily', updates: 'yes' }) })).status, 303);
+    const daily = await (await request(fixture.base, '/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    assert.match(daily, /Benachrichtigungsauswahl gespeichert/);
     assert.match(daily, /value="daily" selected/);
   } finally { await new Promise((resolve) => fixture.app.close(resolve)); }
 });
@@ -1485,7 +1488,7 @@ test('Viele Beiträge und Ausgaben bleiben über Seiten und direkte Beitragslink
     const sid = await login(fixture);
     const headers = { cookie: sid };
     const firstUpdates = await (await request(fixture.base, '/bbsinfo/updates/', { headers })).text();
-    assert.match(firstUpdates, /<details class="updates-preferences"><summary>/);
+    assert.match(firstUpdates, /<div class="updates-preferences">/);
     assert.ok(firstUpdates.indexOf('class="updates-preferences"') < firstUpdates.indexOf('id="update-17"'));
     assert.match(firstUpdates, /href="\/bbsinfo\/updates\/\?page=2"/);
     assert.doesNotMatch(firstUpdates, /<h2>Meldung 1<\/h2>/);

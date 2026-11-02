@@ -22,8 +22,8 @@ test('Abo-Seite und Speicherbestätigung zeigen bei fehlender IDM-Prüfung pausi
   const cmsStore = {
     async rememberIdentity() {}, async recordAudit() {},
     async listContentPage() { return { items: [], page: 1, pageCount: 1, hasNext: false }; },
-    async subscriptionMode() { return mode; },
-    async setSubscription(_uuid, value) { mode = value; },
+    async subscriptionPreferences() { return { mode, notifyUpdates: true, notifyAlbums: false }; },
+    async setSubscription(_uuid, value) { mode = value.mode; },
   };
   const auth = {
     async begin() { return { verifier: 'v', state: 's', nonce: 'n', url: 'https://school.example/oauth/authorize?state=s' }; },
@@ -43,18 +43,18 @@ test('Abo-Seite und Speicherbestätigung zeigen bei fehlender IDM-Prüfung pausi
     const callback = await request('/bbsinfo/oidc/callback?code=ok&state=s', { headers: { cookie: tx } });
     assert.equal(callback.status, 303);
     const sid = callback.headers.getSetCookie().find((cookie) => cookie.startsWith('__Secure-bbsinfo-session=')).split(';')[0];
-    const initial = await (await request('/bbsinfo/updates/', { headers: { cookie: sid } })).text();
-    assert.match(initial, /Persönliche Update-Mails sind derzeit pausiert/);
+    const initial = await (await request('/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    assert.match(initial, /Persönliche Mails sind derzeit pausiert/);
     const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(initial)[1];
-    const saved = await request('/bbsinfo/subscribe', {
+    const saved = await request('/bbsinfo/notifications/save', {
       method: 'POST',
       headers: { cookie: sid, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ csrf, mode: 'instant' }),
+      body: new URLSearchParams({ csrf, mode: 'instant', updates: 'yes' }),
     });
     assert.equal(saved.status, 303);
     assert.equal(mode, 'instant');
-    const after = await (await request('/bbsinfo/updates/', { headers: { cookie: sid } })).text();
-    assert.match(after, /Auswahl gespeichert\. Persönliche Update-Mails sind derzeit pausiert/);
+    const after = await (await request('/bbsinfo/notifications/', { headers: { cookie: sid } })).text();
+    assert.match(after, /Auswahl gespeichert\. Persönliche Mails sind derzeit pausiert/);
     assert.doesNotMatch(after, /Sofortige Update-Mails eingeschaltet/);
   } finally {
     await new Promise((resolve) => app.close(resolve));

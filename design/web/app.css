@@ -952,6 +952,13 @@ legend {
 .issue-source-status { margin: 8px 0 0; }
 
 .updates-preferences {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px 12px;
+  color: #37526a;
+  font-size: .86rem;
   width: max-content;
   max-width: 100%;
   margin: 0 0 22px;
@@ -960,23 +967,9 @@ legend {
   background: #f8fafb;
 }
 
-.updates-preferences[open] { width: 100%; }
-.updates-preferences summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding: 8px 12px;
-  color: #37526a;
-  font-size: .86rem;
-  cursor: pointer;
-  list-style: none;
-}
-.updates-preferences summary::-webkit-details-marker { display: none; }
-.updates-preferences summary strong { color: var(--ink); }
+.updates-preferences strong { color: var(--ink); }
 .updates-preferences-action { margin-left: auto; text-decoration: underline; }
-.updates-preferences-panel { border-top: 1px solid var(--line); padding: 16px; }
-.updates-preferences-panel .meta { max-width: 75ch; }
+.notification-choice { display: block; margin: 10px 0; }
 
 .subscription-row {
   display: flex;

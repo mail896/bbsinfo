@@ -161,7 +161,7 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
       const chosen = new Set(selected.map(id));
       if (chosen.size !== selected.length) throw new Error('Doppelte Fotoauswahl.');
       const targetId = existingAlbumId ? id(existingAlbumId) : null;
-      const label = targetId ? null : title(newTitle);
+      let label = targetId ? null : title(newTitle);
       return transact(async (conn) => {
         const sets = await conn.query("SELECT title, status FROM photo_sets WHERE id = ? FOR UPDATE", [number]);
         if (!sets.length || sets[0].status !== 'submitted') return null;
@@ -170,8 +170,9 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
         let albumId = targetId;
         if (chosen.size) {
           if (albumId) {
-            const albums = await conn.query('SELECT id FROM photo_albums WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [albumId]);
+            const albums = await conn.query('SELECT id, title FROM photo_albums WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [albumId]);
             if (!albums.length) throw new Error('Album nicht gefunden.');
+            label = albums[0].title;
           } else {
             const result = await conn.query('INSERT INTO photo_albums (title, event_date, description, created_by) VALUES (?, ?, ?, ?)', [label, day, desc, uuid]);
             albumId = Number(result.insertId);
@@ -184,6 +185,8 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
             await conn.query("UPDATE photo_assets SET album_id = ?, sequence_number = ?, status = 'published', published_at = UTC_TIMESTAMP(6) WHERE id = ?", [albumId, sequence, photo.id]);
             await audit(conn, uuid, 'photo.publish', 'photo', photo.id);
           }
+          await conn.query('INSERT INTO photo_album_notifications (album_id, set_id, kind, photo_count, album_title) VALUES (?, ?, ?, ?, ?)', [albumId, number, targetId ? 'expanded' : 'new', chosen.size, label]);
+          await audit(conn, uuid, 'photo_album.notification_created', 'photo_album', albumId, label);
         }
         for (const photo of photos) if (!chosen.has(photo.id)) {
           await conn.query("UPDATE photo_assets SET status = 'rejected', deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?", [uuid, photo.id]);

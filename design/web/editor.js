@@ -143,7 +143,7 @@
           button.type = 'button';
           button.className = 'photo-picker-result';
           const image = document.createElement('img');
-          image.src = `/bbsinfo/photos/${photo.id}/preview.webp`;
+          image.src = `/bbsinfo/photos/published/${photo.id}/preview.webp`;
           image.alt = '';
           button.append(image, document.createTextNode(`${photo.originalName} · ${photo.uploaderName}`));
           button.addEventListener('click', async () => {

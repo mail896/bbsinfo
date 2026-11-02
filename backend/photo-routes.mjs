@@ -25,6 +25,7 @@ const patterns = {
   zip: /^\/bbsinfo\/photos\/albums\/([1-9][0-9]*)\/originale\.zip$/,
   photo: /^\/bbsinfo\/photos\/([1-9][0-9]*)$/,
   preview: /^\/bbsinfo\/photos\/([1-9][0-9]*)\/preview\.webp$/,
+  approvedPreview: /^\/bbsinfo\/photos\/published\/([1-9][0-9]*)\/preview\.webp$/,
   original: /^\/bbsinfo\/photos\/([1-9][0-9]*)\/original$/,
   history: /^\/bbsinfo\/photos\/comments\/([1-9][0-9]*)\/history$/,
 };
@@ -32,7 +33,13 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
   const method = req.method;
   const get = method === 'GET' || method === 'HEAD';
   const store = cmsStore;
-  const sendFile = (file, contentType, disposition = null) => {
+  const sendFile = (file, contentType, disposition = null, etag = null) => {
+    if (etag) {
+      res.setHeader('Cache-Control', 'private, no-cache');
+      res.setHeader('Vary', 'Cookie');
+      res.setHeader('ETag', etag);
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }
+    }
     res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': file.size, ...(disposition ? { 'Content-Disposition': disposition } : {}) });
     if (method === 'HEAD') return res.end();
     streamPhoto(res, file);
@@ -95,14 +102,16 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
       if (method === 'HEAD') return res.end();
       return streamAlbumZip(res, photoRoot, album, album.photos);
     }
-    if ((match = patterns.preview.exec(path)) || (match = patterns.original.exec(path))) {
+    const approved = patterns.approvedPreview.exec(path);
+    if ((match = approved || patterns.preview.exec(path) || patterns.original.exec(path))) {
       const photo = await store.getPhotoAsset(identity.uuid, match[1], identity.editor);
-      if (!photo) return missing(send);
-      const preview = path.endsWith('.webp');
+      if (!photo || (approved && photo.status !== 'published')) return missing(send);
+      const preview = Boolean(approved) || path.endsWith('.webp');
       const file = photoFile(photoRoot, photo.storedName, preview);
       if (!preview && method === 'GET') await store.recordAudit(identity.uuid, 'photo.original', 'photo', photo.id);
       const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' }[photo.mediaType];
-      return sendFile(file, preview ? 'image/webp' : photo.mediaType, preview ? null : `attachment; filename="bbs-info-foto-${photo.id}.${extension}"`);
+      const etag = approved ? `"photo-${photo.storedName}-${file.size}"` : null;
+      return sendFile(file, preview ? 'image/webp' : photo.mediaType, preview ? null : `attachment; filename="bbs-info-foto-${photo.id}.${extension}"`, etag);
     }
     if ((match = patterns.photo.exec(path))) {
       const photo = await store.getPhotoAsset(identity.uuid, match[1], identity.editor);

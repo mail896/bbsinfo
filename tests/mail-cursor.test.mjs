@@ -9,9 +9,9 @@ test('Offene Abonnentenmails können nach der letzten Benutzer-UUID weitergelese
   const store = createCmsStore({ async query(sql, params) { queries.push({ sql, params }); return []; } });
   await store.pendingUpdateMail('instant', 50, null, user);
   assert.match(queries[0].sql, /s\.user_uuid > \?/);
-  assert.deepEqual(queries[0].params, ['instant', user]);
+  assert.deepEqual(queries[0].params, ['instant', user, 'instant', user]);
   await store.pendingUpdateMail('daily', 50, '2026-10-28 17:00:00', user);
-  assert.deepEqual(queries[1].params, ['daily', user, '2026-10-28 17:00:00', '2026-10-28 17:00:00']);
+  assert.deepEqual(queries[1].params, ['daily', user, '2026-10-28 17:00:00', '2026-10-28 17:00:00', '2026-10-28 17:00:00', 'daily', user, '2026-10-28 17:00:00', '2026-10-28 17:00:00', '2026-10-28 17:00:00']);
   await assert.rejects(() => store.pendingUpdateMail('instant', 50, null, '../invalid'), /UUID/);
 });
 

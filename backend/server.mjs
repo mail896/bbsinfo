@@ -18,7 +18,7 @@ import { optimizeEditorUpload, renderEditorImageVariant } from './editor-image.m
 import { cleanRichText, plainFromHtml } from './rich-text.mjs';
 import { handlePhotoRoute } from './photo-routes.mjs';
 import { removePhotoFiles } from './photo-files.mjs';
-import { base, page, feedbackToast, landing, home, searchPage, updatesPage, updateDetailPage, contributionsPage, editorPage, settingsPage, trashPage, digestTestPage, issuesPage, issuePage, issueEditorPage, issueEditPage, issueMailPage, auditPage, auditCsv, statsPage, submissionsPage, archivePage } from './web-pages.mjs';
+import { base, page, feedbackToast, landing, home, searchPage, updatesPage, notificationsPage, updateDetailPage, contributionsPage, editorPage, settingsPage, trashPage, digestTestPage, issuesPage, issuePage, issueEditorPage, issueEditPage, issueMailPage, auditPage, auditCsv, statsPage, submissionsPage, archivePage } from './web-pages.mjs';
 
 const origin = 'https://apps.school.example';
 const publicAssets = new Map([
@@ -306,7 +306,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       if (url.origin !== origin) return send(400, landing('Ungültige Anfrage.'));
       if (!['GET', 'HEAD', 'POST'].includes(req.method)) return send(405, landing('Methode nicht erlaubt.'));
       const path = url.pathname;
-      if ([`${base}editor/`, `${base}editor/issues/`, `${base}editor/templates/`, `${base}editor/digest/`, `${base}updates/`, `${base}contributions/`, `${base}photos/mine`].includes(path) || /^\/bbsinfo\/photos\/sets\/[1-9][0-9]*$/.test(path) || (path === `${base}editor/settings/` && url.searchParams.get('tab') === 'templates') || /^\/bbsinfo\/updates\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/issues\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/editor\/issues\/[1-9][0-9]*\/edit$/.test(path)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+      if ([`${base}editor/`, `${base}editor/issues/`, `${base}editor/templates/`, `${base}editor/digest/`, `${base}updates/`, `${base}notifications/`, `${base}contributions/`, `${base}photos/mine`].includes(path) || /^\/bbsinfo\/photos\/sets\/[1-9][0-9]*$/.test(path) || (path === `${base}editor/settings/` && url.searchParams.get('tab') === 'templates') || /^\/bbsinfo\/updates\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/issues\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/editor\/issues\/[1-9][0-9]*\/edit$/.test(path)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
       const c = cookies(req);
       clean();
       if (publicAssets.has(path) && (req.method === 'GET' || req.method === 'HEAD')) {
@@ -427,8 +427,8 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       const imagesAvailable = cmsStore && editorImageRoot;
       const photosAvailable = cmsStore && photoRoot;
       const photoRoute = photosAvailable && path.startsWith(`${base}photos/`);
-      const cmsGet = cmsStore && (photoRoute || [base + 'updates/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'trash/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
-      const cmsPost = cmsStore && (photoRoute || [base + 'subscribe', base + 'contributions/save', base + 'contributions/delete', base + 'editor/contributions/delete', base + 'trash/restore', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'editor/submissions/delete', base + 'submissions/take-over'].includes(path)));
+      const cmsGet = cmsStore && (photoRoute || [base + 'updates/', base + 'notifications/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'trash/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
+      const cmsPost = cmsStore && (photoRoute || [base + 'notifications/save', base + 'contributions/save', base + 'contributions/delete', base + 'editor/contributions/delete', base + 'trash/restore', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'editor/submissions/delete', base + 'submissions/take-over'].includes(path)));
       if (((path === base || (archiveStore && (path === archivePath || pdfMatch || thumbnailMatch)) || cmsGet) && (req.method === 'GET' || req.method === 'HEAD')) || (cmsPost && req.method === 'POST')) {
         const sid = c[sessionCookie];
         const session = sessions.get(sid);
@@ -476,10 +476,14 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
           if (path === `${base}updates/`) {
             const pageNumber = contentPageNumber(url, 'page');
             if (!pageNumber) return send(400, page('Ungültige Seite', '<section><h1>Ungültige Seite</h1></section>'));
-            const [listing, mode] = await Promise.all([cmsStore.listContentPage('updates', pageNumber), cmsStore.subscriptionMode(identity.uuid)]);
+            const [listing, preferences] = await Promise.all([cmsStore.listContentPage('updates', pageNumber), cmsStore.subscriptionPreferences(identity.uuid)]);
             if (pageNumber > 1 && !listing.items.length) return send(404, page('Seite nicht gefunden', '<section><h1>Seite nicht gefunden</h1></section>'));
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'updates');
-            return send(200, updatesPage(listing.items, mode, session.csrf, listing, subscriberRecipientAllowed(mailConfig, identity.email), personalMailPaused));
+            return send(200, updatesPage(listing.items, preferences, session.csrf, listing, subscriberRecipientAllowed(mailConfig, identity.email), personalMailPaused));
+          }
+          if (path === `${base}notifications/`) {
+            if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'notifications');
+            return send(200, notificationsPage(await cmsStore.subscriptionPreferences(identity.uuid), session.csrf, subscriberRecipientAllowed(mailConfig, identity.email), personalMailPaused, !!photosAvailable, !!submissionsAvailable));
           }
           if (path === `${base}contributions/`) {
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'contributions');
@@ -698,7 +702,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             return send(200, statsPage(report, pageNumber, await readAuditHealth()));
           }
           if (cmsPost) {
-            if (![`${base}subscribe`, `${base}contributions/save`, `${base}contributions/delete`, `${base}trash/restore`, `${base}editor/images/upload`, `${base}submissions/upload`, `${base}submissions/replace`, `${base}submissions/delete`].includes(path) && !identity.editor) return denyProtectedAccess(identity, path.startsWith(`${base}editor/issues/`) ? 'editor.issues' : 'editor');
+            if (![`${base}notifications/save`, `${base}contributions/save`, `${base}contributions/delete`, `${base}trash/restore`, `${base}editor/images/upload`, `${base}submissions/upload`, `${base}submissions/replace`, `${base}submissions/delete`].includes(path) && !identity.editor) return denyProtectedAccess(identity, path.startsWith(`${base}editor/issues/`) ? 'editor.issues' : 'editor');
             if (path === `${base}editor/images/upload`) {
               if (req.headers.origin !== origin) return send(403, page('Zugriff verweigert', '<section><h1>Zugriff verweigert</h1></section>'));
               let upload;
@@ -777,14 +781,17 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               if (!(await cmsStore.restoreTrash(identity.uuid, kind, id, identity.editor))) return send(404, page('Nicht gefunden', '<section><h1>Dieser Eintrag ist nicht mehr wiederherstellbar.</h1></section>'));
               return redirect(identity.editor ? `${base}editor/settings/?tab=trash` : `${base}trash/`, 'Inhalt wiederhergestellt.');
             }
-            if (path === `${base}subscribe`) {
+            if (path === `${base}notifications/save`) {
               const mode = form.get('mode');
               if (!['off', 'instant', 'daily', 'weekly'].includes(mode)) return send(400, page('Ungültiges Abo', '<section><h1>Ungültiges Abo</h1></section>'));
+              const notifyUpdates = form.get('updates') === 'yes';
+              const notifyAlbums = !!photosAvailable && form.get('albums') === 'yes';
+              if (mode !== 'off' && !notifyUpdates && !notifyAlbums) return send(400, page('Thema fehlt', '<section><h1>Bitte mindestens ein Thema wählen.</h1></section>'));
               if (mode !== 'off' && !identity.email) return send(400, page('E-Mail fehlt', '<section><h1>IServ hat keine bestätigte Schul-E-Mail-Adresse übermittelt.</h1></section>'));
-              await cmsStore.setSubscription(identity.uuid, mode);
+              await cmsStore.setSubscription(identity.uuid, { mode, notifyUpdates, notifyAlbums });
               const available = subscriberRecipientAllowed(mailConfig, identity.email);
-              const notice = mode === 'off' ? 'Update-Mails ausgeschaltet.' : personalMailPaused ? 'Auswahl gespeichert. Persönliche Update-Mails sind derzeit pausiert, weil die IServ-Gruppenprüfung nicht verfügbar ist.' : available ? ({ instant: 'Sofortige Update-Mails eingeschaltet.', daily: 'Tägliche Update-Mails eingeschaltet.', weekly: 'Wöchentliche Update-Mails eingeschaltet.' })[mode] : 'Auswahl gespeichert. Der Versand an dieses Konto ist im Testbetrieb noch gesperrt.';
-              return redirect(`${base}updates/`, notice);
+              const notice = mode === 'off' ? 'E-Mail-Benachrichtigungen ausgeschaltet.' : personalMailPaused ? 'Auswahl gespeichert. Persönliche Mails sind derzeit pausiert, weil die IServ-Gruppenprüfung nicht verfügbar ist.' : available ? 'Benachrichtigungsauswahl gespeichert.' : 'Auswahl gespeichert. Der Versand an dieses Konto ist derzeit nicht möglich.';
+              return redirect(`${base}notifications/`, notice);
             }
             if (path === `${base}contributions/save`) {
               const id = form.get('id');

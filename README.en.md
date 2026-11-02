@@ -2,7 +2,7 @@
 
 [Deutsch](README.md) · [Project site and demo screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.2.2** · 2 November 2026 · Concept: Marc Schulz
+**Version 1.3.0** · 2 November 2026 · Concept: Marc Schulz
 
 BBS Info brings school news together for staff. It combines short updates, numbered issues and a searchable historical PDF archive in an access-controlled application. The source is public; articles, staff submissions, photos, archive PDFs, search logs and credentials are not.
 
@@ -16,7 +16,7 @@ BBS Info brings school news together for staff. It combines short updates, numbe
 - A 30-day trash for updates, issues, private articles and profile sheets; announced issues remain protected from deletion.
 - Editors can move pending submissions and unlinked adopted profile sheets directly to the trash and review all staff submissions there; personal trash views show only the owner's own pending submissions.
 - Search across current content, approved photo albums and the protected historical PDF archive, including OCR-derived text.
-- Optional personal update email: immediate, daily, weekly or none, subject to a fresh IServ membership check before sending.
+- Personal notifications in a dedicated tab: opt in to updates and approved photo albums separately, with one immediate, daily or weekly cadence. Current IServ membership is checked before every message.
 - Separate issue email with preview, editable template and an explicit gate for the staff-wide address.
 - Administrator-only audit log, usage statistics, search analysis, filters and CSV export.
 - A consistent desktop and mobile interface.
