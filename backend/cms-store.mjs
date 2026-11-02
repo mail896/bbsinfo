@@ -2,6 +2,7 @@ import mariadb from 'mariadb';
 import { cleanRichText } from './rich-text.mjs';
 import { defaultAppSettings, validateAppSettings } from './app-settings.mjs';
 import { auditGapCategories } from './audit-gap-marker.mjs';
+import { photoStoreMethods } from './photo-store.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -265,11 +266,16 @@ async function reserveIssueNumber(conn) {
 export function createCmsStore(pool, { auditGapMarker = null } = {}) {
   const transact = (work, auditRequired = false) => transaction(pool, work, auditGapMarker, auditRequired);
   return {
+    ...photoStoreMethods(pool, transact, audit, writeAudit),
     async ready() {
       const rows = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('updates', 'update_subscriptions', 'audit_events', 'iserv_identities', 'editor_grants', 'issue_sequence', 'issues', 'issue_updates', 'submissions', 'update_submissions', 'issue_submissions', 'daily_usage', 'issue_mail_delivery', 'content_templates', 'editor_images', 'app_settings', 'contributions', 'issue_contributions', 'search_events', 'update_mail_delivery')");
       if (Number(rows[0]?.n) !== 20) throw new Error('BBS-Info-Datenbankschema fehlt.');
       const fields = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'updates' AND column_name IN ('body_html', 'deleted_at', 'deleted_by', 'mail_suppressed')) OR (table_name = 'contributions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'submissions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'issues' AND column_name IN ('body_html', 'deleted_at', 'deleted_by')) OR (table_name = 'issue_updates' AND column_name = 'snapshot_body_html') OR (table_name = 'audit_events' AND column_name = 'object_title') OR (table_name = 'audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES') OR (table_name = 'iserv_identities' AND column_name = 'email') OR (table_name = 'update_subscriptions' AND column_name = 'mode'))");
       if (Number(fields[0]?.n) !== 16) throw new Error('BBS-Info-Datenbankspalten fehlen.');
+      const photos = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('photo_albums', 'photo_sets', 'photo_assets', 'photo_comments', 'photo_comment_revisions')");
+      if (Number(photos[0]?.n) !== 5) throw new Error('BBS-Info-Datenbankschema fehlt.');
+      const photoField = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'editor_images' AND column_name = 'source_photo_id'");
+      if (Number(photoField[0]?.n) !== 1) throw new Error('BBS-Info-Datenbankspalten fehlen.');
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
     },
     async rememberIdentity(identity) {
@@ -341,9 +347,9 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
         await audit(conn, uuid, 'settings.edit', 'settings');
       });
     },
-    async recordAudit(actor, action, type = null, id = null) {
+    async recordAudit(actor, action, type = null, id = null, title = null) {
       const actorUuid = validActor(actor);
-      await transact((conn) => writeAudit(conn, actorUuid, action, type, id, null), true);
+      await transact((conn) => writeAudit(conn, actorUuid, action, type, id, title), true);
     },
     async recordAuthFailure(category, actor = null) {
       if (!AUTH_FAILURE_ACTIONS.has(category)) throw new Error('Ungültige Anmeldefehlerart.');
@@ -611,7 +617,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const range = `day >= UTC_DATE() - INTERVAL ${days - 1} DAY`;
       const [daily, topContent, activeUsers, subscriptions, searchTerms, searchPeople] = await Promise.all([
         pool.query(`SELECT DATE_FORMAT(day, '%d.%m.%Y') AS day, action, SUM(event_count) AS eventCount FROM daily_usage WHERE ${range} GROUP BY day, action ORDER BY day DESC, action LIMIT 3000`),
-        pool.query(`SELECT action, object_type AS objectType, object_id AS objectId, SUM(event_count) AS eventCount FROM daily_usage WHERE ${range} AND action IN ('archive.pdf','issue.view','issue.pdf','update.view','submission.published_file') GROUP BY action, object_type, object_id ORDER BY eventCount DESC LIMIT 10`),
+        pool.query(`SELECT action, object_type AS objectType, object_id AS objectId, SUM(event_count) AS eventCount FROM daily_usage WHERE ${range} AND action IN ('archive.pdf','issue.view','issue.pdf','update.view','submission.published_file','photo_album.visit','photo_album.zip','photo.original') GROUP BY action, object_type, object_id ORDER BY eventCount DESC LIMIT 10`),
         pool.query(`SELECT COUNT(DISTINCT actor_uuid) AS count FROM audit_events WHERE occurred_at >= UTC_TIMESTAMP() - INTERVAL ${days} DAY`),
         pool.query('SELECT COUNT(*) AS count FROM update_subscriptions WHERE enabled = 1'),
         pool.query(`SELECT term, COUNT(*) AS eventCount FROM search_events WHERE searched_at >= UTC_TIMESTAMP(6) - INTERVAL ${days} DAY GROUP BY term ORDER BY eventCount DESC, term LIMIT 20`),

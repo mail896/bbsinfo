@@ -18,6 +18,7 @@ Environment=BBSINFO_SOCKET=/run/bbsinfo/backend.sock
 Environment=BBSINFO_ARCHIVE_ROOT=/var/lib/bbsinfo/archive
 Environment=BBSINFO_SUBMISSION_ROOT=/var/lib/bbsinfo/submissions
 Environment=BBSINFO_EDITOR_IMAGE_ROOT=/var/lib/bbsinfo/editor-images
+Environment=BBSINFO_PHOTO_ROOT=/var/lib/bbsinfo/photos
 Environment=BBSINFO_MAIL_CONFIG=%d/mail
 RuntimeDirectory=bbsinfo
 RuntimeDirectoryMode=0750

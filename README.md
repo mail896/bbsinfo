@@ -2,16 +2,17 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.1.2** · 29. Oktober 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.2.0** · 2. November 2026 · Idee und Konzeption: Marc Schulz
 
-BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
+BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Fotos, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 
 ## Funktionen
 
 - IServ-Anmeldung mit Kollegiumsprüfung, getrennten Rollen für Lesende, Redaktion und Administration.
 - Laufende Beiträge mit Entwürfen, rich-text-Editor, Bildern und frei bearbeitbaren Textbausteinen.
 - Eigene Beiträge und Steckbriefe des Kollegiums mit redaktioneller Übernahme.
-- Nummerierte Ausgaben aus eigenen Texten und ausgewählten Beiträgen; eingebettete Steckbriefe, Webansicht und PDF-Download.
+- Nummerierte Ausgaben aus eigenen Texten und ausgewählten Beiträgen; eingebettete Steckbriefe, freigegebene Library-Bilder, Webansicht und PDF-Download.
+- Geschützte Fotolibrary: Kolleginnen und Kollegen reichen Bilderordner privat ein; die Redaktion übernimmt ausgewählte Originale in gemeinsame Alben. Vorschauen, namentliche Kommentare, Album-ZIP mit Herkunftsliste und auditierte Zugriffe sind enthalten.
 - 30-Tage-Papierkorb für Updates, Ausgaben, private Beiträge und Steckbriefe; bereits angekündigte Ausgaben bleiben vor Löschung geschützt.
 - Die Redaktion kann offene Einreichungen und unverknüpfte übernommene Steckbriefe direkt in den Papierkorb verschieben und dort Beiträge aller Konten prüfen; persönliche Papierkörbe zeigen nur eigene offene Einreichungen.
 - Volltextsuche in neuen Inhalten sowie Suche im geschützten, teilweise per OCR erschlossenen historischen PDF-Archiv.
@@ -22,7 +23,7 @@ BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurz
 
 ## Screenshots
 
-Die [Projektseite](https://mail896.github.io/bbsinfo/) zeigt alle wichtigen Ansichten. **Sämtliche Screenshots verwenden fiktive Demodaten.** Sie zeigen die echten HTML-Templates, aber keine Live-Inhalte und keine echte IServ-Sitzung.
+Die [Projektseite](https://mail896.github.io/bbsinfo/) zeigt ausgewählte Ansichten. **Sämtliche Screenshots verwenden fiktive Demodaten.** Sie zeigen die echten HTML-Templates, aber keine Live-Inhalte und keine echte IServ-Sitzung.
 
 ![Startseite mit fiktiven Daten](docs/screenshots/startseite.png)
 

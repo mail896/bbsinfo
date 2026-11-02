@@ -2,16 +2,17 @@
 
 [Deutsch](README.md) · [Project site and demo screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.1.2** · 29 October 2026 · Concept: Marc Schulz
+**Version 1.2.0** · 2 November 2026 · Concept: Marc Schulz
 
-BBS Info brings school news together for staff. It combines short updates, numbered issues and a searchable historical PDF archive in an access-controlled application. The source is public; articles, staff submissions, archive PDFs, search logs and credentials are not.
+BBS Info brings school news together for staff. It combines short updates, numbered issues and a searchable historical PDF archive in an access-controlled application. The source is public; articles, staff submissions, photos, archive PDFs, search logs and credentials are not.
 
 ## Features
 
 - IServ sign-in with current staff-group checks and separate reader, editor and administrator roles.
 - Ongoing updates with drafts, a rich-text editor, optimized images and editable text snippets.
 - Staff-submitted articles and profile sheets with editorial review.
-- Numbered issues assembled from selected articles, with embedded profile sheets, a web view and PDF download.
+- Numbered issues assembled from selected articles, with embedded profile sheets, approved library photos, a web view and PDF download.
+- Protected photo library: staff submit folders privately; editors select originals for shared albums. Previews, named comments, album ZIPs with an attribution manifest and audited access are included.
 - A 30-day trash for updates, issues, private articles and profile sheets; announced issues remain protected from deletion.
 - Editors can move pending submissions and unlinked adopted profile sheets directly to the trash and review all staff submissions there; personal trash views show only the owner's own pending submissions.
 - Search across current content and the protected historical PDF archive, including OCR-derived text.
@@ -22,7 +23,7 @@ BBS Info brings school news together for staff. It combines short updates, numbe
 
 ## Screenshots
 
-The [project site](https://mail896.github.io/bbsinfo/) shows the main views. **All screenshots use fictional sample data.** They are rendered from the actual page templates, without a live IServ session or private content.
+The [project site](https://mail896.github.io/bbsinfo/) shows selected views. **All screenshots use fictional sample data.** They are rendered from the actual page templates, without a live IServ session or private content.
 
 ![Home page with fictional data](docs/screenshots/startseite.png)
 

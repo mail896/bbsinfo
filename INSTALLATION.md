@@ -1,11 +1,11 @@
 # Installation und Betrieb
 
-Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installation**. Sie ist kein unbeaufsichtigter Universalinstaller. BBS Info 1.1 wurde für die BBS Einbeck und deren IServ vorbereitet; im Public-Stand sind Domains und Mailadressen auf `school.example` neutralisiert.
+Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installation**. Sie ist kein unbeaufsichtigter Universalinstaller. BBS Info 1.2 wurde für die BBS Einbeck und deren IServ vorbereitet; im Public-Stand sind Domains und Mailadressen auf `school.example` neutralisiert.
 
 ## Voraussetzungen
 
 - Node.js 24, npm, MariaDB und Python 3.
-- Python-Pakete für PDF-Verarbeitung: `pypdf`, `reportlab`, `beautifulsoup4`, `Pillow`; für OCR zusätzlich `ocrmypdf`, Tesseract und passende Sprachdaten; für PDF-Vorschauen Ghostscript.
+- Python-Pakete für PDF-Verarbeitung und Fotovorschauen: `pypdf`, `reportlab`, `beautifulsoup4`, `Pillow`; für OCR zusätzlich `ocrmypdf`, Tesseract und passende Sprachdaten; für PDF-Vorschauen Ghostscript. HEIC-Vorschauen benötigen `libheif-examples` und einen HEIC-Decoder; Aufnahmedaten werden mit `libimage-exiftool-perl` ausgelesen.
 - HTTPS-Reverse-Proxy und ein IServ-OIDC-Client mit Callback `https://apps.school.example/bbsinfo/oidc/callback`.
 - Ein lesender IServ-IDM-Dienstzugang für die aktuelle Kollegiumsprüfung vor persönlichen Mails und bei der ersten Bindung zusätzlicher Redaktionsrechte.
 - Ein eigenes MariaDB-Dienstkonto, private Datenverzeichnisse und regelmäßige, geprüfte Backups.
@@ -16,11 +16,16 @@ Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installat
 2. `config.example.json` als Vorlage für eine **private** Konfigurationsdatei außerhalb des Repositorys verwenden. Client-ID, Client-Secret und die UUID der Audit-Administration werden nur dort hinterlegt. Datei auf `0600` oder `0400` begrenzen.
 3. Die festen Beispiel-Domains und Mailadressen in `backend/` sowie `design/web/` auf die eigene Umgebung anpassen. Der OIDC-Callback muss mit der IServ-Registrierung exakt übereinstimmen. Danach alle Tests erneut ausführen; Test-Fixtures bei einer Domänenanpassung konsistent anpassen.
 4. MariaDB-Datenbank und eigenes Dienstkonto anlegen und `db/schema.sql` auf eine **leere** Datenbank anwenden. Die Dateien unter `db/migrations/` dienen Upgrades älterer Stände; sie nicht pauschal zusätzlich auf das aktuelle Schema anwenden. Dem Dienstkonto nur die für die Tabellen benötigten Rechte geben.
-5. Private Verzeichnisse für Archiv, Einreichungen und Redaktionsbilder anlegen. Original-PDFs, Vorschaubilder, SQLite-Index, Uploads und MariaDB-Dateien gehören nicht in den Webroot oder nach Git.
+5. Private Verzeichnisse für Archiv, Einreichungen, Redaktionsbilder und Fotos anlegen. Original-PDFs, Vorschaubilder, SQLite-Index, Uploads und MariaDB-Dateien gehören nicht in den Webroot oder nach Git.
+
+6. Den Dienst mit `BBSINFO_CONFIG` oder systemd-Credentials starten. Der Standard-Port bindet nur an `127.0.0.1`; `BBSINFO_SOCKET` wählt einen Unix-Socket. Optional: `BBSINFO_ARCHIVE_ROOT`, `BBSINFO_SUBMISSION_ROOT`, `BBSINFO_EDITOR_IMAGE_ROOT`, `BBSINFO_PHOTO_ROOT`.
+7. Apache oder einen anderen Reverse Proxy für `/bbsinfo/` und die statischen Assets einrichten. `deploy/` enthält ein angepasstes Beispielprofil. Geschützte Routen müssen ohne IServ-Sitzung abgewiesen werden.
+
+## Upgrades
+
+Bei einer bestehenden Installation von Version 1.1 vor dem Wechsel auf 1.2 eine private Vollsicherung samt Rücksicherungstest durchführen und `db/migrations/2026-11-02-photo-library.sql` einmalig anwenden. Das private Fotoverzeichnis muss dem Dienstkonto gehören und `0700` gesetzt sein. Abgelehnte Fotooriginale werden nach der Sichtung entfernt; veröffentlichte gelöschte Fotos bleiben sieben Tage verdeckt wiederherstellbar.
 
 Bei einer bestehenden Installation von Version 1.0 vor dem Wechsel auf 1.1 eine private Vollsicherung samt Rücksicherungstest durchführen und `db/migrations/2026-10-29-content-trash.sql` einmalig anwenden. Der Papierkorb bereinigt abgelaufene Einträge beim Dienststart und täglich; dazu muss das private Einreichungsverzeichnis konfiguriert sein.
-6. Den Dienst mit `BBSINFO_CONFIG` oder systemd-Credentials starten. Der Standard-Port bindet nur an `127.0.0.1`; `BBSINFO_SOCKET` wählt einen Unix-Socket. Optional: `BBSINFO_ARCHIVE_ROOT`, `BBSINFO_SUBMISSION_ROOT`, `BBSINFO_EDITOR_IMAGE_ROOT`.
-7. Apache oder einen anderen Reverse Proxy für `/bbsinfo/` und die statischen Assets einrichten. `deploy/` enthält ein angepasstes Beispielprofil. Geschützte Routen müssen ohne IServ-Sitzung abgewiesen werden.
 
 ## Mail
 

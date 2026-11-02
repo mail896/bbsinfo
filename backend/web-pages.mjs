@@ -74,7 +74,7 @@ function templateSources(templates) {
 }
 
 function imagePicker(target) {
-  return `<div class="editor-image-picker"><label for="image-${target}">Bild in den Text einfügen (JPEG, PNG oder WebP, höchstens 3 MB; wird beim Hochladen optimiert)</label><input id="image-${target}" type="file" accept="image/jpeg,image/png,image/webp" data-image-editor="${target}"><span class="image-upload-status" role="status" aria-live="polite"></span></div>`;
+  return `<div class="editor-image-picker"><label for="image-${target}">Bild in den Text einfügen (JPEG, PNG oder WebP, höchstens 3 MB; wird beim Hochladen optimiert)</label><input id="image-${target}" type="file" accept="image/jpeg,image/png,image/webp" data-image-editor="${target}"><span class="image-upload-status" role="status" aria-live="polite"></span><details data-library-picker="${target}"><summary>Bild aus der Fotolibrary einfügen</summary><label>Freigegebene Bilder suchen<input type="search" maxlength="100" data-library-search placeholder="Album oder Dateiname"></label><button type="button" class="secondary" data-library-find>Suche</button><div data-library-results role="status"></div></details></div>`;
 }
 
 export function landing(message = '') {
@@ -100,7 +100,7 @@ function personalPage(active, content, script = '', showContributions = true, sh
   return page('Meine Inhalte', `<section class="personal-page"><p><a href="${base}">← Zur Startseite</a></p><h1>Meine Inhalte</h1>${nav}<div class="personal-content">${content}</div></section>`, script);
 }
 
-export function home(identity, csrf, archiveAvailable, cmsAvailable, submissionsAvailable, highlights = { updates: [], issues: [] }, mailTest = null) {
+export function home(identity, csrf, archiveAvailable, cmsAvailable, submissionsAvailable, highlights = { updates: [], issues: [] }, mailTest = null, photosAvailable = false) {
   const updateItems = highlights.updates.length ? highlights.updates.map((item, index) => {
     const href = `${base}updates/${Number(item.id)}`;
     const date = `<time>${htmlEscape(publishedDateTime(item))} Uhr</time>`;
@@ -110,8 +110,8 @@ export function home(identity, csrf, archiveAvailable, cmsAvailable, submissions
       : `<article class="teaser teaser-compact">${date}${title}</article>`;
   }).join('') : '<p class="meta">Noch keine Updates veröffentlicht.</p>';
   const issueItems = highlights.issues.length ? highlights.issues.map((item) => `<article class="teaser"><time>${htmlEscape(item.publishedAt || '')}</time><h3><a href="${base}issues/${Number(item.number)}">BBS Info ${Number(item.number)}: ${htmlEscape(item.title)}</a></h3></article>`).join('') : '<p class="meta">Noch keine neue Ausgabe veröffentlicht.</p>';
-  const nav = `<nav class="home-nav" aria-label="Bereiche">${cmsAvailable ? `<a href="${base}updates/">Aktuelles</a><a href="${base}issues/">Ausgaben</a>` : ''}${archiveAvailable ? `<a class="archive-action" href="${base}archive/">Historisches Archiv</a>` : ''}${cmsAvailable || submissionsAvailable ? `<a class="personal-action" href="${base}${cmsAvailable ? 'contributions/' : 'submissions/'}">Meine Beiträge &amp; Steckbriefe</a>` : ''}</nav>`;
-  const work = identity.editor || identity.auditOwner ? `<section class="work-panel"><span class="eyebrow">Arbeitsbereich</span><h2>${identity.auditOwner ? 'Redaktion & Verwaltung' : 'Redaktion'}</h2><div class="work-links">${identity.editor && cmsAvailable ? `<a href="${base}editor/">Beiträge bearbeiten →</a><a class="issue-action" href="${base}editor/issues/">Ausgaben bearbeiten →</a><a href="${base}editor/settings/">Einstellungen →</a>` : ''}${identity.auditOwner && cmsAvailable ? `<a href="${base}audit/">Audit-Log →</a><a href="${base}stats/">Nutzungsstatistik →</a>` : ''}</div></section>` : '';
+  const nav = `<nav class="home-nav" aria-label="Bereiche">${cmsAvailable ? `<a href="${base}updates/">Aktuelles</a><a href="${base}issues/">Ausgaben</a>` : ''}${photosAvailable ? `<a href="${base}photos/">Fotolibrary</a>` : ''}${archiveAvailable ? `<a class="archive-action" href="${base}archive/">Historisches Archiv</a>` : ''}${cmsAvailable || submissionsAvailable ? `<a class="personal-action" href="${base}${cmsAvailable ? 'contributions/' : 'submissions/'}">Meine Beiträge &amp; Steckbriefe</a>` : ''}</nav>`;
+  const work = identity.editor || identity.auditOwner ? `<section class="work-panel"><span class="eyebrow">Arbeitsbereich</span><h2>${identity.auditOwner ? 'Redaktion & Verwaltung' : 'Redaktion'}</h2><div class="work-links">${identity.editor && cmsAvailable ? `<a href="${base}editor/">Beiträge bearbeiten →</a><a class="issue-action" href="${base}editor/issues/">Ausgaben bearbeiten →</a>${photosAvailable ? `<a href="${base}photos/review">Fotoeinreichungen sichten →</a>` : ''}<a href="${base}editor/settings/">Einstellungen →</a>` : ''}${identity.auditOwner && cmsAvailable ? `<a href="${base}audit/">Audit-Log →</a><a href="${base}stats/">Nutzungsstatistik →</a>` : ''}</div></section>` : '';
   return page('Startseite', `<section class="home-shell">${identity.editor ? publicationMailNotice(mailTest) : ''}<div class="hero"><div><span class="eyebrow">BBS INFO · INTERN</span><h1>Gut informiert.<br>Gemeinsam <span>im Blick.</span></h1><p>Neuigkeiten, Ausgaben und Mitteilungen für das Kollegium.</p></div><div class="hero-account"><span>Mit IServ angemeldet als</span><strong>${htmlEscape(identity.name)}</strong><span>${identity.auditOwner ? 'Administration und Auswertung' : identity.editor ? 'Redaktion' : 'Kollegium'}</span><form method="post" action="${base}logout"><input type="hidden" name="csrf" value="${csrf}"><button type="submit" title="Von BBS Info abmelden">Abmelden →</button></form></div></div>${nav}${cmsAvailable ? `<section class="search-panel"><div><span class="eyebrow">Alles an einem Ort</span><h2>BBS Info durchsuchen</h2></div><form method="get" action="${base}search/"><label class="visually-hidden" for="home-search">Suchbegriff</label><input id="home-search" name="q" placeholder="Thema oder Stichwort" minlength="2" maxlength="100" required><button type="submit">Suchen →</button></form></section><div class="home-grid"><section class="home-card"><div class="card-header"><div><span class="eyebrow">Laufend</span><h2>Aktuelle Updates</h2></div><a href="${base}updates/">Alle ansehen →</a></div>${updateItems}</section><section class="home-card issue-card"><div class="card-header"><div><span class="eyebrow">Nummeriert</span><h2>Neue Ausgaben</h2></div><a href="${base}issues/">Alle ansehen →</a></div>${issueItems}</section></div>` : ''}${work}</section>`);
 }
 
@@ -312,16 +312,20 @@ const actionLabels = {
   'contribution.submit': 'Kollegenbeitrag eingereicht', 'contribution.edit': 'Kollegenbeitrag geändert', 'contribution.delete': 'Kollegenbeitrag in den Papierkorb verschoben', 'contribution.restore': 'Kollegenbeitrag wiederhergestellt', 'contribution.purge': 'Kollegenbeitrag endgültig entfernt', 'contribution.take_over': 'Kollegenbeitrag übernommen',
   'submission.create': 'Steckbrief hochgeladen', 'submission.replace': 'Steckbrief ersetzt', 'submission.delete': 'Steckbrief in den Papierkorb verschoben', 'submission.restore': 'Steckbrief wiederhergestellt', 'submission.purge': 'Steckbrief endgültig entfernt', 'submission.take_over': 'Steckbrief übernommen', 'submission.file': 'Steckbrief geöffnet', 'submission.published_file': 'Veröffentlichten Steckbrief geöffnet',
   'image.upload': 'Bild hochgeladen', 'image.view': 'Bild geöffnet',
+  'photo_set.create': 'Fotoeinreichung angelegt', 'photo_set.view': 'Fotoeinreichung geöffnet', 'photo_set.submit': 'Fotoeinreichung gesendet und Bildrechte bestätigt', 'photo_set.review': 'Fotoeinreichung gesichtet', 'photo_set.cancel': 'Fotoeinreichung verworfen',
+  'photo.upload': 'Foto hochgeladen', 'photo.publish': 'Foto übernommen', 'photo.reject': 'Foto abgelehnt', 'photo.original': 'Fotooriginal heruntergeladen', 'photo.delete': 'Foto gelöscht', 'photo.restore': 'Foto wiederhergestellt', 'photo.purge': 'Fotodatei entfernt', 'photo.date_edit': 'Aufnahmedatum geändert', 'photo.issue_copy': 'Fotolibrary-Bild für Redaktion kopiert', 'photo.picker_search': 'Freigegebene Fotos gesucht',
+  'photo_album.create': 'Fotoalbum angelegt', 'photo_album.visit': 'Fotoalbum besucht', 'photo_album.search': 'Fotoalben gesucht', 'photo_album.zip': 'Fotoalbum als ZIP heruntergeladen', 'photo_album.edit': 'Fotoalbum bearbeitet', 'photo_album.delete': 'Fotoalbum gelöscht', 'photo_album.restore': 'Fotoalbum wiederhergestellt',
+  'photo_comment.create': 'Bildkommentar geschrieben', 'photo_comment.edit': 'Bildkommentar geändert', 'photo_comment.delete': 'Bildkommentar gelöscht', 'photo_comment.history_view': 'Bildkommentarverlauf geöffnet',
   'template.create': 'Textbaustein angelegt', 'template.edit': 'Textbaustein bearbeitet', 'settings.edit': 'Einstellungen bearbeitet',
   'editor.grant': 'Redaktionsrecht vergeben', 'editor.bind': 'Redaktionsrecht an Konto gebunden', 'editor.revoke': 'Redaktionsrecht entzogen',
   'audit.export': 'Audit exportiert', 'access.denied': 'Zugriff verweigert',
 };
 const automaticMailActions = new Set(['update.mail_start', 'update.mail_sent', 'update.mail_uncertain']);
 function auditActorName(row) {
-  if (automaticMailActions.has(row.action)) return 'BBS Info';
+  if (automaticMailActions.has(row.action) || row.action === 'photo.purge') return 'BBS Info';
   return row.actorUuid === null ? 'Ohne zugeordnete Person' : row.actorName || 'Name noch nicht erfasst';
 }
-const pageLabels = { home: 'Startseite', updates: 'Updates', issues: 'Ausgaben', contributions: 'Meine Beiträge', trash: 'Papierkorb', stats: 'Nutzungsstatistik', audit: 'Audit-Log', editor: 'Redaktion', 'editor.issues': 'Ausgaben-Redaktion', 'editor.templates': 'Textbausteine', submissions: 'Steckbriefe' };
+const pageLabels = { home: 'Startseite', updates: 'Updates', issues: 'Ausgaben', contributions: 'Meine Beiträge', trash: 'Papierkorb', stats: 'Nutzungsstatistik', audit: 'Audit-Log', editor: 'Redaktion', 'editor.issues': 'Ausgaben-Redaktion', 'editor.templates': 'Textbausteine', submissions: 'Steckbriefe', photos: 'Fotolibrary', 'photos.mine': 'Meine Fotoeinreichungen', 'photos.review': 'Fotoeinreichungen sichten' };
 function objectLabel(row) {
   if (row.objectType === 'auth') return 'IServ-Anmeldung';
   if (row.objectType === 'page') return pageLabels[row.objectId] || row.objectId || 'Seite';
@@ -334,6 +338,10 @@ function objectLabel(row) {
   if (row.objectType === 'contribution') return row.objectTitle ? `Kollegenbeitrag: ${row.objectTitle}` : 'Kollegenbeitrag';
   if (row.objectType === 'submission') return row.objectTitle ? `Steckbrief: ${row.objectTitle}` : `Steckbrief ${row.objectId}`;
   if (row.objectType === 'image') return 'Redaktionsbild';
+  if (row.objectType === 'photo') return `Foto ${row.objectId}`;
+  if (row.objectType === 'photo_set') return row.objectTitle ? `Fotoeinreichung: ${row.objectTitle}` : `Fotoeinreichung ${row.objectId}`;
+  if (row.objectType === 'photo_album') return row.objectTitle ? `Fotoalbum: ${row.objectTitle}` : `Fotoalbum ${row.objectId}`;
+  if (row.objectType === 'photo_comment') return `Bildkommentar ${row.objectId}`;
   if (row.objectType === 'template') return `Textbaustein ${row.objectId}`;
   if (row.objectType === 'editor') return row.objectTitle || 'Redaktionskonto';
   if (row.objectType === 'subscription') return automaticMailActions.has(row.action) ? row.objectTitle || 'Empfängername nicht erfasst' : 'Update-Abo';
@@ -353,6 +361,10 @@ function objectHref(row) {
     return `${base}editor/`;
   }
   if (row.objectType === 'contribution') return `${base}editor/`;
+  if (row.objectType === 'photo' && numericId) return `${base}photos/${numericId}`;
+  if (row.objectType === 'photo_set' && numericId) return `${base}photos/sets/${numericId}`;
+  if (row.objectType === 'photo_album' && numericId) return `${base}photos/albums/${numericId}`;
+  if (row.objectType === 'photo_comment' && numericId) return `${base}photos/comments/${numericId}/history`;
   if (row.objectType === 'submission') {
     if (row.action === 'submission.delete') return `${base}submissions/`;
     if (numericId && row.action === 'submission.published_file') return `${base}media/${numericId}`;
@@ -361,7 +373,7 @@ function objectHref(row) {
   if (row.objectType === 'template') return `${base}editor/templates/`;
   if (row.objectType === 'image' && /^[0-9a-f-]{36}$/.test(row.imageName || '')) return `${base}editor-images/${row.imageName}`;
   if (row.objectType === 'page') {
-    const pages = { home: '', updates: 'updates/', issues: 'issues/', stats: 'stats/', audit: 'audit/', editor: 'editor/', 'editor.issues': 'editor/issues/', 'editor.templates': 'editor/templates/', submissions: 'submissions/' };
+    const pages = { home: '', updates: 'updates/', issues: 'issues/', stats: 'stats/', audit: 'audit/', editor: 'editor/', 'editor.issues': 'editor/issues/', 'editor.templates': 'editor/templates/', submissions: 'submissions/', photos: 'photos/', 'photos.mine': 'photos/mine', 'photos.review': 'photos/review' };
     if (Object.hasOwn(pages, id)) return `${base}${pages[id]}`;
   }
   if (row.objectType === 'search') return `${base}search/`;

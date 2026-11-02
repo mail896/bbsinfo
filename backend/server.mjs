@@ -16,6 +16,8 @@ import { renderIssuePdf } from './issue-pdf.mjs';
 import { countPdfPages, renderPdfPage } from './submission-preview.mjs';
 import { optimizeEditorUpload, renderEditorImageVariant } from './editor-image.mjs';
 import { cleanRichText, plainFromHtml } from './rich-text.mjs';
+import { handlePhotoRoute } from './photo-routes.mjs';
+import { removePhotoFiles } from './photo-files.mjs';
 import { base, page, feedbackToast, landing, home, searchPage, updatesPage, updateDetailPage, contributionsPage, editorPage, settingsPage, trashPage, digestTestPage, issuesPage, issuePage, issueEditorPage, issueEditPage, issueMailPage, auditPage, auditCsv, statsPage, submissionsPage, archivePage } from './web-pages.mjs';
 
 const origin = 'https://apps.school.example';
@@ -23,6 +25,7 @@ const publicAssets = new Map([
   [`${base}assets/app.css`, { path: fileURLToPath(new URL('../design/web/app.css', import.meta.url)), type: 'text/css; charset=utf-8' }],
   [`${base}assets/landing.js`, { path: fileURLToPath(new URL('../design/web/landing.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/editor.js`, { path: fileURLToPath(new URL('../design/web/editor.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
+  [`${base}assets/photos.js`, { path: fileURLToPath(new URL('../design/web/photos.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/feedback.js`, { path: fileURLToPath(new URL('../design/web/feedback.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/jodit.min.js`, { path: fileURLToPath(new URL('../node_modules/jodit/es2021/jodit.min.js', import.meta.url)), type: 'text/javascript; charset=utf-8' }],
   [`${base}assets/jodit.min.css`, { path: fileURLToPath(new URL('../node_modules/jodit/es2021/jodit.min.css', import.meta.url)), type: 'text/css; charset=utf-8' }],
@@ -107,7 +110,7 @@ async function readForm(req, maxBytes = 24000) {
   return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
 }
 
-export function createApp({ settings, getProvider, archiveStore = null, cmsStore = null, auditGapMarker = null, submissionRoot = null, editorImageRoot = null, mailConfig = null, sendIssue = sendIssueNotice, sendDigest = sendDigestTest, sendLiveIssue = sendCollegiumIssue, verifySubscriberGroup = null, now = Date.now }) {
+export function createApp({ settings, getProvider, archiveStore = null, cmsStore = null, auditGapMarker = null, submissionRoot = null, editorImageRoot = null, photoRoot = null, mailConfig = null, sendIssue = sendIssueNotice, sendDigest = sendDigestTest, sendLiveIssue = sendCollegiumIssue, verifySubscriberGroup = null, now = Date.now }) {
   const config = validateSettings(settings);
   if (typeof getProvider !== 'function') throw new Error('OIDC-Provider fehlt.');
   const personalMailPaused = mailConfig?.personalMailRequiresIdm === true && typeof verifySubscriberGroup !== 'function';
@@ -250,12 +253,22 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
   }
   const notificationTimer = setInterval(() => { void runNotifications(); }, 60000);
   notificationTimer.unref();
+  async function prunePhotoFiles() {
+    if (!cmsStore?.expiredPhotoFiles || !photoRoot) return;
+    for (let batch = 0; batch < 10; batch++) {
+      const files = await cmsStore.expiredPhotoFiles();
+      if (!files.length) break;
+      for (const file of files) await cmsStore.purgeExpiredPhoto(file.id, (name) => removePhotoFiles(photoRoot, name));
+    }
+  }
+  if (photoRoot) setImmediate(() => { void prunePhotoFiles().catch(() => process.stderr.write('BBS Info: Fotobereinigung beim Start fehlgeschlagen.\n')); });
   const retentionTimer = setInterval(() => {
     if (cmsStore?.pruneSearchEvents) void cmsStore.pruneSearchEvents().catch(() => process.stderr.write('BBS Info: Suchdatenbereinigung fehlgeschlagen.\n'));
     if (cmsStore?.pruneTrash && submissionRoot) void cmsStore.pruneTrash(async (name) => {
       try { await removeSubmissionFile(submissionRoot, name); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }).catch(() => process.stderr.write('BBS Info: Papierkorbbereinigung fehlgeschlagen.\n'));
+    if (cmsStore?.expiredPhotoFiles && photoRoot) void prunePhotoFiles().catch(() => process.stderr.write('BBS Info: Fotobereinigung fehlgeschlagen.\n'));
   }, 24 * 60 * 60 * 1000);
   retentionTimer.unref();
   const app = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {
@@ -293,7 +306,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       if (url.origin !== origin) return send(400, landing('Ungültige Anfrage.'));
       if (!['GET', 'HEAD', 'POST'].includes(req.method)) return send(405, landing('Methode nicht erlaubt.'));
       const path = url.pathname;
-      if ([`${base}editor/`, `${base}editor/issues/`, `${base}editor/templates/`, `${base}editor/digest/`, `${base}updates/`, `${base}contributions/`].includes(path) || (path === `${base}editor/settings/` && url.searchParams.get('tab') === 'templates') || /^\/bbsinfo\/updates\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/issues\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/editor\/issues\/[1-9][0-9]*\/edit$/.test(path)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+      if ([`${base}editor/`, `${base}editor/issues/`, `${base}editor/templates/`, `${base}editor/digest/`, `${base}updates/`, `${base}contributions/`, `${base}photos/mine`].includes(path) || /^\/bbsinfo\/photos\/sets\/[1-9][0-9]*$/.test(path) || (path === `${base}editor/settings/` && url.searchParams.get('tab') === 'templates') || /^\/bbsinfo\/updates\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/issues\/[1-9][0-9]*$/.test(path) || /^\/bbsinfo\/editor\/issues\/[1-9][0-9]*\/edit$/.test(path)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
       const c = cookies(req);
       clean();
       if (publicAssets.has(path) && (req.method === 'GET' || req.method === 'HEAD')) {
@@ -412,8 +425,10 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       const updateDetailMatch = /^\/bbsinfo\/updates\/([1-9][0-9]*)$/.exec(path);
       const submissionsAvailable = cmsStore && submissionRoot;
       const imagesAvailable = cmsStore && editorImageRoot;
-      const cmsGet = cmsStore && ([base + 'updates/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'trash/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
-      const cmsPost = cmsStore && ([base + 'subscribe', base + 'contributions/save', base + 'contributions/delete', base + 'editor/contributions/delete', base + 'trash/restore', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'editor/submissions/delete', base + 'submissions/take-over'].includes(path)));
+      const photosAvailable = cmsStore && photoRoot;
+      const photoRoute = photosAvailable && path.startsWith(`${base}photos/`);
+      const cmsGet = cmsStore && (photoRoute || [base + 'updates/', base + 'issues/', base + 'search/', base + 'contributions/', base + 'trash/', base + 'editor/', base + 'editor/issues/', base + 'editor/issue-sources', base + 'editor/templates/', base + 'editor/settings/', base + 'editor/digest/', base + 'audit/', base + 'audit/export.csv', base + 'stats/'].includes(path) || updateDetailMatch || issueMatch || issuePdfMatch || issueMailMatch || issueEditMatch || (submissionsAvailable && (path === `${base}submissions/` || submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch)) || (imagesAvailable && editorImageMatch));
+      const cmsPost = cmsStore && (photoRoute || [base + 'subscribe', base + 'contributions/save', base + 'contributions/delete', base + 'editor/contributions/delete', base + 'trash/restore', base + 'editor/drafts', base + 'editor/update', base + 'editor/publish', base + 'editor/delete-update', base + 'editor/issues/create-publish', base + 'editor/issues/publish', base + 'editor/issues/delete', base + 'editor/issues/delete-draft', base + 'editor/templates/save', base + 'editor/settings/save', base + 'editor/settings/editors/add', base + 'editor/settings/editors/remove', base + 'editor/digest/send-test'].includes(path) || issueMailMatch || issueMailTestMatch || issueEditMatch || (imagesAvailable && path === `${base}editor/images/upload`) || (submissionsAvailable && [base + 'submissions/upload', base + 'submissions/replace', base + 'submissions/delete', base + 'editor/submissions/delete', base + 'submissions/take-over'].includes(path)));
       if (((path === base || (archiveStore && (path === archivePath || pdfMatch || thumbnailMatch)) || cmsGet) && (req.method === 'GET' || req.method === 'HEAD')) || (cmsPost && req.method === 'POST')) {
         const sid = c[sessionCookie];
         const session = sessions.get(sid);
@@ -426,10 +441,11 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             return send(403, landing('Dieses IServ-Konto ist nicht für BBS Info freigeschaltet.'));
           }
           feedbackSession = session;
+          if (photoRoute) return await handlePhotoRoute({ req, res, path, url, identity, csrf: session.csrf, cmsStore, photoRoot, editorImageRoot, send, redirect, readForm, sameToken, origin });
           if (path === base) {
             const highlights = cmsStore ? await cmsStore.homeHighlights() : { updates: [], issues: [] };
             if (cmsStore && req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'home');
-            return send(200, home(identity, session.csrf, !!archiveStore, !!cmsStore, !!submissionsAvailable, highlights, url.searchParams.get('mailTest')));
+            return send(200, home(identity, session.csrf, !!archiveStore, !!cmsStore, !!submissionsAvailable, highlights, url.searchParams.get('mailTest'), !!photosAvailable));
           }
           if (path === archivePath) {
             const query = url.searchParams.get('q') || '';
@@ -913,7 +929,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
       res.end();
     }
   });
-  app.requestTimeout = 10000;
+  app.requestTimeout = 120000;
   app.headersTimeout = 10000;
   app.keepAliveTimeout = 3000;
   app.maxConnections = 100;
@@ -968,6 +984,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     }
     const editorImageRoot = process.env.BBSINFO_EDITOR_IMAGE_ROOT || null;
     if (editorImageRoot) validateSubmissionRoot(editorImageRoot);
+    const photoRoot = process.env.BBSINFO_PHOTO_ROOT || null;
+    if (photoRoot) validateSubmissionRoot(photoRoot);
     stage = 'Mailkonfiguration';
     const mailConfig = process.env.BBSINFO_MAIL_CONFIG ? readMailConfig(process.env.BBSINFO_MAIL_CONFIG) : null;
     let verifySubscriberGroup = null;
@@ -978,7 +996,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
       catch { idmSetupError = true; }
     }
     if (subscriberDeliveryEnabled(mailConfig) && !verifySubscriberGroup) process.stderr.write(`BBS Info: Persönliche Update-Mails pausiert; ${idmSetupError ? 'IDM-Dienstzugang ungültig' : 'IDM-Prüfung nicht eingerichtet'}.\n`);
-    const app = createApp({ settings: config, getProvider, archiveStore, cmsStore, auditGapMarker, submissionRoot, editorImageRoot, mailConfig, verifySubscriberGroup });
+    const app = createApp({ settings: config, getProvider, archiveStore, cmsStore, auditGapMarker, submissionRoot, editorImageRoot, photoRoot, mailConfig, verifySubscriberGroup });
     if (auditGapMarker) {
       const checkCapacity = async () => {
         try {

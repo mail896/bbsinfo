@@ -123,6 +123,58 @@
     });
   });
 
+  document.querySelectorAll('[data-library-picker]').forEach((picker) => {
+    const target = picker.dataset.libraryPicker;
+    const search = picker.querySelector('[data-library-search]');
+    const results = picker.querySelector('[data-library-results]');
+    const textarea = document.getElementById(target);
+    const csrf = textarea?.form?.querySelector('input[name="csrf"]')?.value;
+    if (!textarea || !csrf) return;
+    const find = async () => {
+      results.textContent = 'Suche läuft …';
+      try {
+        const response = await fetch(`/bbsinfo/photos/picker?q=${encodeURIComponent(search.value)}`, { credentials: 'same-origin' });
+        if (!response.ok) throw new Error();
+        const photos = await response.json();
+        results.replaceChildren();
+        if (!photos.length) { results.textContent = 'Keine freigegebenen Bilder gefunden.'; return; }
+        for (const photo of photos) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'photo-picker-result';
+          const image = document.createElement('img');
+          image.src = `/bbsinfo/photos/${photo.id}/preview.webp`;
+          image.alt = '';
+          button.append(image, document.createTextNode(`${photo.originalName} · ${photo.uploaderName}`));
+          button.addEventListener('click', async () => {
+            button.disabled = true;
+            try {
+              const body = new URLSearchParams({ csrf, id: String(photo.id) });
+              const imported = await fetch('/bbsinfo/photos/issue-image', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+              if (!imported.ok) throw new Error();
+              const result = await imported.json();
+              if (!/^\/bbsinfo\/editor-images\/[0-9a-f-]{36}$/.test(result.url)) throw new Error();
+              const element = document.createElement('img');
+              element.src = result.url;
+              element.alt = result.alt.slice(0, 200);
+              element.style.width = '420px';
+              element.style.height = 'auto';
+              const editor = editors.get(target);
+              if (editor) { editor.s.insertHTML(element.outerHTML); editor.focus(); }
+              else { textarea.value += element.outerHTML; textarea.focus(); }
+              results.textContent = 'Bild eingefügt. Bitte den Beitrag speichern.';
+            } catch { results.textContent = 'Bild konnte nicht eingefügt werden.'; }
+            finally { button.disabled = false; }
+          });
+          results.append(button);
+        }
+      } catch { results.textContent = 'Suche zurzeit nicht verfügbar.'; }
+    };
+    picker.querySelector('[data-library-find]').addEventListener('click', find);
+    search.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); find(); } });
+    picker.addEventListener('toggle', () => { if (picker.open && !results.childNodes.length) find(); });
+  });
+
   const sourceFields = { updates: 'updateId', contributions: 'contributionId', submissions: 'submissionId' };
   const sourceEmpty = { updates: 'Keine Updates gefunden.', contributions: 'Keine Beiträge gefunden.', submissions: 'Keine Steckbriefe gefunden.' };
   const dateTime = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });

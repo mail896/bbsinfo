@@ -1,11 +1,11 @@
 # Installation and operation
 
-This guide describes the components for a **separate installation**; it is not an unattended universal installer. BBS Info 1.1 was built for BBS Einbeck and its IServ. The public source uses neutral `school.example` domains and mailboxes.
+This guide describes the components for a **separate installation**; it is not an unattended universal installer. BBS Info 1.2 was built for BBS Einbeck and its IServ. The public source uses neutral `school.example` domains and mailboxes.
 
 ## Requirements
 
 - Node.js 24, npm, MariaDB and Python 3.
-- Python PDF packages: `pypdf`, `reportlab`, `beautifulsoup4`, `Pillow`; optionally `ocrmypdf`, Tesseract and language data for OCR, plus Ghostscript for previews.
+- Python PDF and photo packages: `pypdf`, `reportlab`, `beautifulsoup4`, `Pillow`; optionally `ocrmypdf`, Tesseract and language data for OCR, plus Ghostscript for PDF previews. HEIC previews require `libheif-examples` and a HEIC decoder; capture dates use `libimage-exiftool-perl`.
 - An HTTPS reverse proxy and an IServ OIDC client with callback `https://apps.school.example/bbsinfo/oidc/callback`.
 - A read-only IServ IDM service account for current staff-group verification before personal email and the first assignment of additional editor rights.
 - A dedicated MariaDB service account, private data directories and regularly tested backups.
@@ -16,11 +16,16 @@ This guide describes the components for a **separate installation**; it is not a
 2. Use `config.example.json` to create a **private** configuration file outside Git. Store the OIDC client secret and audit administrator UUID only there, with mode `0600` or `0400`.
 3. Replace the fixed sample domains and email addresses in `backend/` and `design/web/` with your environment's values. The OIDC callback must exactly match the IServ registration. Keep the test fixtures consistent and rerun the tests.
 4. Create a dedicated MariaDB database and account; apply `db/schema.sql` to an **empty** database. The files under `db/migrations/` upgrade older installs and must not all be blindly replayed over the current schema. Grant only the rights needed by the service.
-5. Create private storage for the archive, submissions and editor images. PDFs, thumbnails, the SQLite index, uploads and MariaDB data must stay outside the web root and Git.
+5. Create private storage for the archive, submissions, editor images and photos. PDFs, thumbnails, the SQLite index, uploads and MariaDB data must stay outside the web root and Git.
+
+6. Start the service with `BBSINFO_CONFIG` or systemd credentials. The default port binds only to `127.0.0.1`; `BBSINFO_SOCKET` selects a Unix socket. Optional paths: `BBSINFO_ARCHIVE_ROOT`, `BBSINFO_SUBMISSION_ROOT`, `BBSINFO_EDITOR_IMAGE_ROOT`, `BBSINFO_PHOTO_ROOT`.
+7. Configure Apache or another reverse proxy for `/bbsinfo/` and its static assets. `deploy/` provides an adapted example. Protected routes must reject anonymous requests.
+
+## Upgrades
 
 For an existing 1.0 installation, make and restore-test a private full backup before switching to 1.1, then apply `db/migrations/2026-10-29-content-trash.sql` once. Expired trash entries are purged on service start and daily; the private submissions directory must be configured.
-6. Start the service with `BBSINFO_CONFIG` or systemd credentials. The default port binds only to `127.0.0.1`; `BBSINFO_SOCKET` selects a Unix socket. Optional paths: `BBSINFO_ARCHIVE_ROOT`, `BBSINFO_SUBMISSION_ROOT`, `BBSINFO_EDITOR_IMAGE_ROOT`.
-7. Configure Apache or another reverse proxy for `/bbsinfo/` and its static assets. `deploy/` provides an adapted example. Protected routes must reject anonymous requests.
+
+For an existing 1.1 installation, make and restore-test a private full backup before switching to 1.2, then apply `db/migrations/2026-11-02-photo-library.sql` once. The photo directory needs mode `0700` and service-account ownership. Rejected originals are removed after review; deleted published photos can be recovered by an operator for seven days.
 
 ## Email
 
