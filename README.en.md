@@ -2,7 +2,7 @@
 
 [Deutsch](README.md) · [Project site and demo screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.4.0** · 2 November 2026 · Concept: Marc Schulz
+**Version 1.4.1** · 2 November 2026 · Concept: Marc Schulz
 
 BBS Info brings school news together for staff. It combines short updates, numbered issues and a searchable historical PDF archive in an access-controlled application. The source is public; articles, staff submissions, photos, archive PDFs, search logs and credentials are not.
 

@@ -482,20 +482,17 @@ li {
 }
 
 .work-links {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .work-links > div {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-@media (max-width: 800px) {
-  .work-links { grid-template-columns: 1fr; }
+  max-width: 100%;
 }
 
 .work-links a {

@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.4.0** · 2. November 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.4.1** · 2. November 2026 · Idee und Konzeption: Marc Schulz
 
 BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Fotos, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 

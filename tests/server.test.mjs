@@ -13,6 +13,7 @@ import { auditPage, home, issuesPage, notificationsPage, statsPage } from '../ba
 const uuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const settings = { clientId: 'test', clientSecret: 'test', auditOwnerUuid: uuid, readerGroupName: 'Kollegium' };
 const validInfo = { 'iserv:uuid': uuid, 'iserv:groups': [{ name: 'Kollegium' }], name: '<Marc>' };
+const appVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 test('Fehler beim Schließen der Datenbank bleibt behandelt', () => {
   const moduleUrl = new URL('../backend/server.mjs', import.meta.url).href;
@@ -650,7 +651,7 @@ test('Anmeldefluss setzt geschützte Cookies und prüft Gruppe erneut', async ()
     assert.match(landing, /assets\/logo-mappe\.png/);
     assert.match(landing, /assets\/landing-steckbriefe-back\.webp/);
     assert.match(landing, /assets\/app\.css/);
-    assert.match(landing, /<script src="\/bbsinfo\/assets\/theme\.js\?v=1\.4\.0"><\/script><link rel="stylesheet"/);
+    assert.ok(landing.includes(`<script src="/bbsinfo/assets/theme.js?v=${appVersion}"></script><link rel="stylesheet"`));
     assert.match(landing, /landing-flip/);
     assert.match(landing, /landing-title/);
     assert.match(landing, /Info Mappe/);
