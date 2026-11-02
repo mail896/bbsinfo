@@ -58,21 +58,33 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
       const photos = await pool.query(`${photoSelect} WHERE a.set_id = ? AND a.status IN ('private','published') ORDER BY a.id`, [number]);
       return { ...rows[0], photos };
     },
-    async addPhoto(user, setId, file) {
+    async listOpenPhotoCandidates(user, setId, sizes) {
+      const uuid = actor(user), number = id(setId);
+      if (!Array.isArray(sizes) || sizes.length > 300 || sizes.some((size) => !Number.isSafeInteger(size) || size < 1 || size > 40 * 1024 * 1024)) throw new Error('Ungültige Dateigrößen.');
+      if (!sizes.length) return [];
+      const placeholders = sizes.map(() => '?').join(',');
+      return pool.query(`SELECT a.stored_name AS storedName, a.byte_size AS byteSize FROM photo_assets a JOIN photo_sets s ON s.id = a.set_id WHERE s.id = ? AND s.owner_uuid = ? AND s.status = 'open' AND a.status = 'private' AND a.byte_size IN (${placeholders}) ORDER BY a.id LIMIT 300`, [number, uuid, ...sizes]);
+    },
+    async addPhoto(user, setId, file, matchesExisting = async () => false) {
       const uuid = actor(user), number = id(setId);
       const name = originalName(file.originalName);
-      if (!UUID.test(file.storedName) || !imageTypes.has(file.mediaType) || !Number.isSafeInteger(file.byteSize) || file.byteSize < 1 || file.byteSize > 40 * 1024 * 1024) throw new Error('Ungültige Bilddatei.');
+      if (!UUID.test(file.storedName) || !imageTypes.has(file.mediaType) || !Number.isSafeInteger(file.byteSize) || file.byteSize < 1 || file.byteSize > 40 * 1024 * 1024 || !/^[0-9a-f]{64}$/.test(file.sha256)) throw new Error('Ungültige Bilddatei.');
       const captured = date(file.capturedDate);
       const fallback = date(file.eventDateFallback);
       return transact(async (conn) => {
         const sets = await conn.query("SELECT id FROM photo_sets WHERE id = ? AND owner_uuid = ? AND status = 'open' FOR UPDATE", [number, uuid]);
         if (!sets.length) return null;
+        const candidates = await conn.query("SELECT id, stored_name AS storedName FROM photo_assets WHERE set_id = ? AND status = 'private' AND byte_size = ? ORDER BY id", [number, file.byteSize]);
+        for (const candidate of candidates) if (await matchesExisting(candidate.storedName, file.sha256)) {
+          await audit(conn, uuid, 'photo.upload_duplicate', 'photo', candidate.id, name);
+          return { id: Number(candidate.id), duplicate: true };
+        }
         const size = await conn.query("SELECT COUNT(*) AS count, COALESCE(SUM(byte_size),0) AS bytes FROM photo_assets WHERE set_id = ? AND status = 'private'", [number]);
         if (Number(size[0].count) >= 300 || Number(size[0].bytes) + file.byteSize > 2 * 1024 * 1024 * 1024) throw new Error('Fotoeinreichung zu groß.');
         const result = await conn.query('INSERT INTO photo_assets (set_id, uploader_uuid, stored_name, original_name, media_type, byte_size, captured_date) VALUES (?, ?, ?, ?, ?, ?, ?)', [number, uuid, file.storedName.toLowerCase(), name, file.mediaType, file.byteSize, captured]);
         if (captured || fallback) await conn.query('UPDATE photo_sets SET event_date = COALESCE(event_date, ?) WHERE id = ?', [captured || fallback, number]);
         await audit(conn, uuid, 'photo.upload', 'photo', result.insertId, name);
-        return Number(result.insertId);
+        return { id: Number(result.insertId), duplicate: false };
       }, true);
     },
     async submitPhotoSet(user, setId, name, eventDate, confirmed) {

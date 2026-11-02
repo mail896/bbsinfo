@@ -4,9 +4,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { createHash, webcrypto } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { runInNewContext } from 'node:vm';
-import { receivePhoto, photoFile, removePhotoFiles } from '../backend/photo-files.mjs';
+import { receivePhoto, photoFile, photoSha256, removePhotoFiles } from '../backend/photo-files.mjs';
 import { photoAlbumPage, photoDetailPage, photoIndexPage, photoMinePage, photoSetPage } from '../backend/photo-pages.mjs';
 import { searchPage } from '../backend/web-pages.mjs';
 import { photoStoreMethods } from '../backend/photo-store.mjs';
@@ -30,6 +31,8 @@ test('Fotooriginal bleibt unverändert, Vorschau enthält keine Metadaten und un
     const uploaded = await receivePhoto(request, root, 0);
     assert.equal(uploaded.mediaType, 'image/jpeg');
     assert.equal(uploaded.capturedDate, '2026-10-28');
+    assert.equal(uploaded.sha256, createHash('sha256').update(original).digest('hex'));
+    assert.equal(await photoSha256(root, uploaded.storedName), uploaded.sha256);
     assert.deepEqual(await readFile(photoFile(root, uploaded.storedName).path), original);
     const preview = await readFile(photoFile(root, uploaded.storedName, true).path);
     assert.equal(preview.toString('ascii', 0, 4), 'RIFF');
@@ -81,6 +84,7 @@ test('Uploadstatus hat Fortschrittsanzeige und Redaktion sieht jedes Bild nur ei
   assert.equal((review.match(/preview\.webp/g) || []).length, 2);
   assert.doesNotMatch(review, /class="photo-grid"/);
   assert.match(review, /Bilder für die Library auswählen/);
+  assert.match(review, /Gleiche Titel verbinden Einreichungen nicht automatisch/);
   const owner = photoSetPage(set, 'csrf', false, true);
   assert.doesNotMatch(owner, /<span>Test Person<\/span>/);
 });
@@ -187,4 +191,86 @@ test('Uploadfortschritt zeigt echte Übertragung und erst nach Serverantwort 100
   assert.equal(progress.hidden, false);
   assert.deepEqual(values, [0, 50, 100]);
   assert(messages.some((message) => message.includes('wird verarbeitet')));
+});
+
+test('Fortsetzen gleicht den erneut gewählten Ordner nach Inhalt ab und überträgt nur fehlende Fotos', async () => {
+  const source = await readFile(new URL('../design/web/photos.js', import.meta.url), 'utf8');
+  const present = Buffer.from('bereits vorhanden');
+  const missing = Buffer.from('noch fehlend');
+  const files = [
+    { name: 'eins.jpg', size: present.length, arrayBuffer: async () => present, lastModified: Date.now() },
+    { name: 'zwei.jpg', size: missing.length, arrayBuffer: async () => missing, lastModified: Date.now() },
+  ];
+  const fields = { folder: { files }, files: { files: [] }, csrf: { value: 'token' } };
+  let submit;
+  const status = { textContent: '' };
+  const progress = { hidden: true, querySelector: (selector) => selector === 'progress' ? { value: 0 } : { textContent: '' } };
+  const form = { dataset: { setId: '7' }, elements: { namedItem: (name) => fields[name] },
+    querySelector: (selector) => selector === '[data-photo-upload-status]' ? status : selector === '[data-photo-upload-progress]' ? progress : { disabled: false },
+    addEventListener: (name, listener) => { if (name === 'submit') submit = listener; } };
+  const sent = [];
+  let reloaded = false;
+  class UploadRequest {
+    constructor() { this.handlers = {}; this.upload = { addEventListener() {} }; }
+    open() {}
+    setRequestHeader() {}
+    addEventListener(name, listener) { this.handlers[name] = listener; }
+    send(body) {
+      sent.push(body.file.name);
+      this.status = 201;
+      this.responseText = '{}';
+      queueMicrotask(() => this.handlers.load());
+    }
+  }
+  runInNewContext(source, {
+    document: { querySelector: (selector) => selector === '[data-photo-more-form]' ? form : null, addEventListener() {} },
+    XMLHttpRequest: UploadRequest, FormData: class { set(name, file) { this[name] = file; } }, URLSearchParams,
+    crypto: webcrypto, location: { reload: () => { reloaded = true; } },
+    fetch: async (url, options) => {
+      assert.equal(url, '/bbsinfo/photos/sets/7/resume-check');
+      assert.equal(options.body.getAll('size').length, 2);
+      return { ok: true, json: async () => ({ entries: [{ size: present.length, sha256: createHash('sha256').update(present).digest('hex') }] }) };
+    },
+  });
+  await submit({ preventDefault() {}, currentTarget: form });
+  assert.equal(reloaded, true, status.textContent);
+  assert.deepEqual(sent, ['zwei.jpg']);
+});
+
+test('Server erkennt doppelte Fotos in offener Einreichung auch bei erneuter Übertragung', async () => {
+  const calls = [];
+  const conn = { async query(sql, values) {
+    calls.push(sql);
+    if (sql.startsWith('SELECT id FROM photo_sets')) return [{ id: 5 }];
+    if (sql.startsWith('SELECT id, stored_name AS storedName')) return [{ id: 12, storedName: '11111111-1111-4111-8111-111111111111' }];
+    throw new Error(`Unerwartete Abfrage: ${sql}`);
+  } };
+  const audits = [];
+  const store = photoStoreMethods({}, (work) => work(conn), async (...args) => { audits.push(args); }, async () => {});
+  const result = await store.addPhoto(uuid, 5, { storedName: '22222222-2222-4222-8222-222222222222', originalName: 'anders-benannt.jpg', mediaType: 'image/jpeg', byteSize: 123, sha256: 'a'.repeat(64), capturedDate: null }, async (storedName, digest) => {
+    assert.equal(storedName, '11111111-1111-4111-8111-111111111111');
+    assert.equal(digest, 'a'.repeat(64));
+    return true;
+  });
+  assert.deepEqual(result, { id: 12, duplicate: true });
+  assert.equal(calls.some((sql) => sql.startsWith('INSERT INTO photo_assets')), false);
+  assert.equal(audits[0][2], 'photo.upload_duplicate');
+});
+
+test('Neues Foto bleibt nach Inhaltsprüfung genau einmal in der Einreichung', async () => {
+  let inserted = 0;
+  const conn = { async query(sql) {
+    if (sql.startsWith('SELECT id FROM photo_sets')) return [{ id: 5 }];
+    if (sql.startsWith('SELECT id, stored_name AS storedName')) return [{ id: 12, storedName: '11111111-1111-4111-8111-111111111111' }];
+    if (sql.startsWith('SELECT COUNT(*) AS count')) return [{ count: 1, bytes: 123 }];
+    if (sql.startsWith('INSERT INTO photo_assets')) { inserted++; return { insertId: 13 }; }
+    if (sql.startsWith('UPDATE photo_sets')) return [];
+    throw new Error(`Unerwartete Abfrage: ${sql}`);
+  } };
+  const audits = [];
+  const store = photoStoreMethods({}, (work) => work(conn), async (...args) => { audits.push(args); }, async () => {});
+  const result = await store.addPhoto(uuid, 5, { storedName: '22222222-2222-4222-8222-222222222222', originalName: 'neu.jpg', mediaType: 'image/jpeg', byteSize: 123, sha256: 'b'.repeat(64), capturedDate: null }, async () => false);
+  assert.deepEqual(result, { id: 13, duplicate: false });
+  assert.equal(inserted, 1);
+  assert.equal(audits[0][2], 'photo.upload');
 });

@@ -74,3 +74,32 @@ test('nur Redaktion kann ein Albumtitelbild speichern; die Auswahl erreicht die 
   assert.deepEqual(saved, [uuid, '7', 'Schulfest', '', '', '12']);
   assert.equal(editor.result.path, '/bbsinfo/photos/albums/7');
 });
+
+test('Fortsetzungsprüfung ist nur für die eigene offene Fotoeinreichung erreichbar', async () => {
+  const denied = fixture('/bbsinfo/photos/sets/7/resume-check', 'POST');
+  denied.options.cmsStore.getPhotoSet = async () => null;
+  await handlePhotoRoute(denied.options);
+  assert.equal(denied.result.status, 404);
+
+  const open = fixture('/bbsinfo/photos/sets/7/resume-check', 'POST');
+  open.options.cmsStore.getPhotoSet = async () => ({ id: 7, status: 'open' });
+  open.options.readForm = async () => new URLSearchParams({ csrf: 'valid', size: '123' });
+  open.options.cmsStore.listOpenPhotoCandidates = async (user, setId, sizes) => {
+    assert.equal(user, uuid);
+    assert.equal(setId, 7);
+    assert.deepEqual(sizes, [123]);
+    return [];
+  };
+  open.options.res.writeHead = (status) => { open.result.status = status; };
+  open.options.res.end = (body) => { open.result.body = JSON.parse(body); };
+  await handlePhotoRoute(open.options);
+  assert.equal(open.result.status, 200);
+  assert.deepEqual(open.result.body, { entries: [] });
+  assert.deepEqual(open.result.audits, [[uuid, 'photo_set.resume_check', 'photo_set', 7]]);
+
+  const invalid = fixture('/bbsinfo/photos/sets/7/resume-check', 'POST');
+  invalid.options.cmsStore.getPhotoSet = async () => ({ id: 7, status: 'open' });
+  invalid.options.readForm = async () => new URLSearchParams({ csrf: 'valid', size: '123 OR 1=1' });
+  await handlePhotoRoute(invalid.options);
+  assert.equal(invalid.result.status, 400);
+});

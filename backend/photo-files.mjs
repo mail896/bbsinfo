@@ -1,5 +1,5 @@
 import busboy from 'busboy';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream, lstatSync, createReadStream, statfsSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ const maxBytes = 40 * 1024 * 1024;
 const previewScript = fileURLToPath(new URL('./photo_preview.py', import.meta.url));
 const zipScript = fileURLToPath(new URL('./photo_zip.py', import.meta.url));
 const runPhotoJob = createMediaLimiter({ maxActive: 1, maxQueued: 8, maxWaitMs: 45000 });
+const digestCache = new Map();
 export const photoPath = (root, name, preview = false) => {
   if (!uuid.test(name)) throw new Error('Ungültiger Fotodateiname.');
   return join(validateSubmissionRoot(root), `${name}${preview ? '.webp' : ''}`);
@@ -21,11 +22,23 @@ export const photoFile = (root, name, preview = false) => {
   const path = photoPath(root, name, preview);
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 1 || stat.size > maxBytes) throw new Error('Foto nicht verfügbar.');
-  return { path, size: stat.size };
+  return { path, size: stat.size, mtimeMs: stat.mtimeMs };
 };
 export async function removePhotoFiles(root, name) {
   for (const preview of [false, true]) try { await unlink(photoPath(root, name, preview)); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+export async function photoSha256(root, name) {
+  const file = photoFile(root, name);
+  const cached = digestCache.get(file.path);
+  if (cached?.size === file.size && cached.mtimeMs === file.mtimeMs) return cached.value;
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file.path)) hash.update(chunk);
+  const value = hash.digest('hex');
+  digestCache.delete(file.path);
+  digestCache.set(file.path, { size: file.size, mtimeMs: file.mtimeMs, value });
+  if (digestCache.size > 1000) digestCache.delete(digestCache.keys().next().value);
+  return value;
 }
 function mediaType(prefix) {
   if (prefix.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png';
@@ -44,6 +57,7 @@ export async function receivePhoto(req, root, minFreeBytes = 10 * 1024 * 1024 * 
   const name = randomUUID();
   const path = photoPath(root, name);
   let originalName = '', size = 0, prefix = Buffer.alloc(0), seen = false, invalid = false, fileDone = Promise.resolve();
+  const hash = createHash('sha256');
   parser.on('file', (field, stream, info) => {
     if (seen || field !== 'file' || !info.filename) invalid = true;
     seen = true;
@@ -53,6 +67,7 @@ export async function receivePhoto(req, root, minFreeBytes = 10 * 1024 * 1024 * 
       try {
         for await (const chunk of stream) {
           size += chunk.length;
+          hash.update(chunk);
           if (prefix.length < 32) prefix = Buffer.concat([prefix, chunk.subarray(0, 32 - prefix.length)]);
           if (size > maxBytes) throw new Error('Foto zu groß.');
           if (!out.write(chunk)) await new Promise((resolve, reject) => { out.once('drain', resolve); out.once('error', reject); });
@@ -88,7 +103,7 @@ export async function receivePhoto(req, root, minFreeBytes = 10 * 1024 * 1024 * 
         catch { reject(new Error('Bildmetadaten fehlen.')); }
       });
     })));
-    return { storedName: name, originalName, mediaType: type, byteSize: size, capturedDate: metadata.capturedDate || null };
+    return { storedName: name, originalName, mediaType: type, byteSize: size, sha256: hash.digest('hex'), capturedDate: metadata.capturedDate || null };
   } catch (error) {
     try { await fileDone; } catch { /* preserve original error */ }
     await removePhotoFiles(root, name);

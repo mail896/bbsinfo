@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.3.0** · 2. November 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.3.1** · 2. November 2026 · Idee und Konzeption: Marc Schulz
 
 BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Fotos, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 
@@ -12,7 +12,7 @@ BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurz
 - Laufende Beiträge mit Entwürfen, rich-text-Editor, Bildern und frei bearbeitbaren Textbausteinen.
 - Eigene Beiträge und Steckbriefe des Kollegiums mit redaktioneller Übernahme.
 - Nummerierte Ausgaben aus eigenen Texten und ausgewählten Beiträgen; eingebettete Steckbriefe, freigegebene Library-Bilder, Webansicht und PDF-Download.
-- Geschützte Fotolibrary: Kolleginnen und Kollegen reichen Bilderordner im persönlichen Bereich mit Uploadfortschritt privat ein; die Redaktion übernimmt ausgewählte Originale in gemeinsame Alben und wählt das Titelbild. Jahresauswahl, paginierte Albumübersicht, Suche nach freigegebenen Alben, Vorschauen, namentliche Kommentare, Album-ZIP mit Herkunftsliste und auditierte Zugriffe sind enthalten.
+- Geschützte Fotolibrary: Kolleginnen und Kollegen reichen Bilderordner im persönlichen Bereich mit Uploadfortschritt privat ein und können unterbrochene Uploads durch erneute Ordnerwahl mit Inhaltsabgleich fortsetzen; die Redaktion übernimmt ausgewählte Originale in gemeinsame Alben und wählt das Titelbild. Jahresauswahl, paginierte Albumübersicht, Suche nach freigegebenen Alben, Vorschauen, namentliche Kommentare, Album-ZIP mit Herkunftsliste und auditierte Zugriffe sind enthalten.
 - 30-Tage-Papierkorb für Updates, Ausgaben, private Beiträge und Steckbriefe; bereits angekündigte Ausgaben bleiben vor Löschung geschützt.
 - Die Redaktion kann offene Einreichungen und unverknüpfte übernommene Steckbriefe direkt in den Papierkorb verschieben und dort Beiträge aller Konten prüfen; persönliche Papierkörbe zeigen nur eigene offene Einreichungen.
 - Suche in neuen Inhalten und freigegebenen Fotoalben sowie im geschützten, teilweise per OCR erschlossenen historischen PDF-Archiv.

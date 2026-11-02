@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { photoFile, receivePhoto, removePhotoFiles, streamPhoto, streamAlbumZip } from './photo-files.mjs';
+import { photoFile, photoSha256, receivePhoto, removePhotoFiles, streamPhoto, streamAlbumZip } from './photo-files.mjs';
 import { saveSubmissionFile, removeSubmissionFile } from './submission-files.mjs';
 import { photoIndexPage, photoMinePage, photoSetPage, photoReviewPage, photoAlbumPage, photoDetailPage, privatePhotoPage, photoCommentHistoryPage } from './photo-pages.mjs';
 import { page, base } from './web-pages.mjs';
@@ -21,6 +21,7 @@ function removeRejectedSoon(store, root) {
 const patterns = {
   set: /^\/bbsinfo\/photos\/sets\/([1-9][0-9]*)$/,
   upload: /^\/bbsinfo\/photos\/sets\/([1-9][0-9]*)\/upload$/,
+  resume: /^\/bbsinfo\/photos\/sets\/([1-9][0-9]*)\/resume-check$/,
   album: /^\/bbsinfo\/photos\/albums\/([1-9][0-9]*)$/,
   zip: /^\/bbsinfo\/photos\/albums\/([1-9][0-9]*)\/originale\.zip$/,
   photo: /^\/bbsinfo\/photos\/([1-9][0-9]*)$/,
@@ -124,6 +125,20 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
     return missing(send);
   }
   if (method !== 'POST' || req.headers.origin !== origin) return forbidden(send);
+  const resume = patterns.resume.exec(path);
+  if (resume) {
+    const form = await readForm(req, 8000);
+    if (!sameToken(form.get('csrf'), csrf)) return forbidden(send);
+    const set = await store.getPhotoSet(identity.uuid, resume[1], false);
+    if (!set || set.status !== 'open') return missing(send);
+    const rawSizes = form.getAll('size');
+    if (rawSizes.length > 300 || rawSizes.some((value) => !/^[1-9][0-9]{0,7}$/.test(value) || Number(value) > 40 * 1024 * 1024)) return bad(send);
+    const candidates = await store.listOpenPhotoCandidates(identity.uuid, set.id, [...new Set(rawSizes.map(Number))]);
+    const entries = [];
+    for (const candidate of candidates) entries.push({ size: Number(candidate.byteSize), sha256: await photoSha256(photoRoot, candidate.storedName) });
+    await store.recordAudit(identity.uuid, 'photo_set.resume_check', 'photo_set', set.id);
+    return json(res, 200, { entries });
+  }
   const upload = patterns.upload.exec(path);
   if (upload) {
     if (!sameToken(req.headers['x-csrf-token'], csrf)) return forbidden(send);
@@ -137,9 +152,10 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
     }
     file.eventDateFallback = req.headers['x-file-date'] || null;
     try {
-      const photoId = await store.addPhoto(identity.uuid, set.id, file);
-      if (!photoId) { await removePhotoFiles(photoRoot, file.storedName); return missing(send); }
-      return json(res, 201, { id: photoId, capturedDate: file.capturedDate });
+      const saved = await store.addPhoto(identity.uuid, set.id, file, async (name, digest) => await photoSha256(photoRoot, name) === digest);
+      if (!saved) { await removePhotoFiles(photoRoot, file.storedName); return missing(send); }
+      if (saved.duplicate) await removePhotoFiles(photoRoot, file.storedName);
+      return json(res, saved.duplicate ? 200 : 201, { id: saved.id, duplicate: saved.duplicate, capturedDate: file.capturedDate });
     } catch (error) {
       await removePhotoFiles(photoRoot, file.storedName);
       if (/Ungültig|zu groß/.test(error.message)) return bad(send);

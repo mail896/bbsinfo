@@ -20,7 +20,7 @@
       });
       request.upload.addEventListener('load', onProcessing);
       request.addEventListener('load', () => {
-        if (request.status !== 201) return reject(new Error('Upload fehlgeschlagen. Die bereits hochgeladenen Bilder bleiben in der Einreichung.'));
+        if (request.status !== 201 && request.status !== 200) return reject(new Error('Upload fehlgeschlagen. Die bereits hochgeladenen Bilder bleiben in der Einreichung.'));
         try { resolve(JSON.parse(request.responseText)); }
         catch { reject(new Error('Antwort des Servers konnte nicht gelesen werden.')); }
       });
@@ -37,6 +37,7 @@
     const bar = progress.querySelector('progress');
     const percent = progress.querySelector('output');
     let completedBytes = 0;
+    let duplicates = 0;
     progress.hidden = false;
     const showProgress = (current = 0, finished = false) => {
       const value = finished ? 100 : Math.min(99, Math.floor((completedBytes + current) * 100 / totalBytes));
@@ -54,13 +55,45 @@
         (fraction) => showProgress(file.size * Math.min(1, fraction)),
         () => { status.textContent = `Bild ${index + 1} von ${images.length} wird verarbeitet: ${file.name}`; });
       completedBytes += file.size;
+      if (result.duplicate) duplicates++;
       showProgress(0, index === images.length - 1);
       const date = document.querySelector('[name="eventDate"]');
       if (date && !date.value) {
         date.value = result.capturedDate || fileDate;
       }
     }
-    status.textContent = `${images.length} Bilder vollständig hochgeladen${skipped ? ` · ${skipped} andere Dateien ausgelassen` : ''}.`;
+    status.textContent = `${images.length - duplicates} Bilder vollständig hochgeladen${duplicates ? ` · ${duplicates} bereits vorhandene übersprungen` : ''}${skipped ? ` · ${skipped} andere Dateien ausgelassen` : ''}.`;
+  }
+  async function missingFiles(files, setId, csrf, status) {
+    const images = files.filter(accepted);
+    if (!images.length || images.length > 300) throw new Error('Bitte 1 bis 300 JPEG-, PNG-, WebP- oder HEIC-Bilder bis 40 MB wählen.');
+    status.textContent = 'Bereits hochgeladene Bilder werden geprüft …';
+    const body = new URLSearchParams({ csrf });
+    for (const size of new Set(images.map((file) => file.size))) body.append('size', String(size));
+    const response = await fetch(`${base}photos/sets/${setId}/resume-check`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    if (!response.ok) throw new Error('Vorhandene Bilder konnten nicht geprüft werden. Bitte später erneut versuchen.');
+    const { entries } = await response.json();
+    const known = new Map();
+    for (const entry of entries) {
+      if (!known.has(entry.size)) known.set(entry.size, new Set());
+      known.get(entry.size).add(entry.sha256);
+    }
+    const counts = new Map();
+    for (const file of images) counts.set(file.size, (counts.get(file.size) || 0) + 1);
+    const selected = new Map();
+    const remaining = [];
+    let skipped = 0;
+    for (const [index, file] of images.entries()) {
+      if (!known.has(file.size) && counts.get(file.size) === 1) { remaining.push(file); continue; }
+      status.textContent = `Bild ${index + 1} von ${images.length} wird abgeglichen: ${file.name}`;
+      const bytes = await file.arrayBuffer();
+      const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      if (known.get(file.size)?.has(digest) || selected.get(file.size)?.has(digest)) { skipped++; continue; }
+      if (!selected.has(file.size)) selected.set(file.size, new Set());
+      selected.get(file.size).add(digest);
+      remaining.push(file);
+    }
+    return { remaining, skipped };
   }
   document.querySelector('[data-photo-upload-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -100,7 +133,12 @@
     const button = form.querySelector('button');
     button.disabled = true;
     try {
-      await upload([...(form.elements.namedItem('files').files || [])], form.dataset.setId, form.elements.namedItem('csrf').value, status, form.querySelector('[data-photo-upload-progress]'));
+      const files = [...(form.elements.namedItem('folder').files || []), ...(form.elements.namedItem('files').files || [])];
+      const csrf = form.elements.namedItem('csrf').value;
+      const { remaining, skipped } = await missingFiles(files, form.dataset.setId, csrf, status);
+      if (!remaining.length) { status.textContent = `Alle ${skipped} ausgewählten Bilder sind bereits in dieser Einreichung.`; return; }
+      status.textContent = `${skipped} vorhandene Bilder übersprungen · ${remaining.length} werden hochgeladen.`;
+      await upload(remaining, form.dataset.setId, csrf, status, form.querySelector('[data-photo-upload-progress]'));
       location.reload();
     } catch (error) { status.textContent = error.message; }
     finally { button.disabled = false; }
