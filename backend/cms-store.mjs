@@ -1002,12 +1002,11 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
         { kind: 'submission', table: 'submissions' },
       ];
       for (const { kind, table } of sources) {
-        const expired = await pool.query(`SELECT id, title${kind === 'submission' ? ', stored_name AS storedName' : ''} FROM ${table} WHERE deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at, id LIMIT 100`);
+        const expired = await pool.query(`SELECT id FROM ${table} WHERE deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY ORDER BY deleted_at, id LIMIT 100`);
         for (const item of expired) {
-          if (kind === 'submission') await removeFile(item.storedName);
           await transact(async (conn) => {
             if (kind === 'issue') await conn.query('SELECT next_number FROM issue_sequence WHERE id = 1 FOR UPDATE');
-            const rows = await conn.query(`SELECT title${kind === 'issue' ? ', number, status' : ''} FROM ${table} WHERE id = ? AND deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE`, [item.id]);
+            const rows = await conn.query(`SELECT title${kind === 'issue' ? ', number, status' : kind === 'submission' ? ', stored_name AS storedName' : ''} FROM ${table} WHERE id = ? AND deleted_at <= UTC_TIMESTAMP(6) - INTERVAL 30 DAY FOR UPDATE`, [item.id]);
             if (rows.length !== 1) return;
             if (kind === 'issue') {
               const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [item.id]);
@@ -1019,6 +1018,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
               await releaseRemovedContributions(conn, oldContributions.map((row) => Number(row.id)).filter(Boolean));
             }
             if (kind === 'update') await conn.query('DELETE FROM update_submissions WHERE update_id = ?', [item.id]);
+            if (kind === 'submission') await removeFile(rows[0].storedName);
             await conn.query(`DELETE FROM ${table} WHERE id = ?`, [item.id]);
             if (kind === 'issue' && rows[0].number) await conn.query('UPDATE issue_sequence SET next_number = LEAST(next_number, ?) WHERE id = 1', [rows[0].number]);
             const action = kind === 'issue' && rows[0].status === 'draft' ? 'issue.draft_purge' : `${kind}.purge`;

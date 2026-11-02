@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { dailyCutoffUtc, deliverPendingUpdates, isDailyMailWindow, isWeeklyMailWindow } from '../backend/notification-service.mjs';
+import { dailyCutoffUtc, deliverVerifiedUpdates, isDailyMailWindow, isWeeklyMailWindow } from '../backend/notification-service.mjs';
 import { sendSubscriberDigest, TEST_RECIPIENT } from '../backend/mail.mjs';
 
 test('Wöchentlicher Versand folgt Berliner Montag um 07:00 Uhr auch bei Zeitumstellung', () => {
@@ -31,17 +31,18 @@ test('Tägliche Sammelmail übernimmt denselben Stichtag in Abfrage und Versandr
       return [{ userUuid: 'a', email: 'l.test@school.example', id: 11, title: 'Meldung' }];
     },
     async claimUpdateMail(user, ids, mode, at) { calls.push({ user, ids, mode, at }); return true; },
+    async releaseUpdateMail() {},
     async finishUpdateMail(user, ids, sent) { calls.push({ user, ids, sent }); },
   };
-  assert.equal(await deliverPendingUpdates(store, config, 'daily', async () => {}, cutoff), 1);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'daily', async () => true, async () => {}, cutoff), 1);
   assert.deepEqual(calls[0], { mode: 'daily', limit: 50, at: cutoff });
   assert.deepEqual(calls[1], { user: 'a', ids: [11], mode: 'daily', at: cutoff });
 });
 
 test('Ohne eingerichteten SMTP-Versand werden weder Empfänger abgefragt noch Mails versendet', async () => {
   let called = false;
-  const store = { async pendingUpdateMail() { called = true; throw new Error('Empfänger abgefragt'); } };
-  const count = await deliverPendingUpdates(store, { deliveryEnabled: false }, 'weekly', async () => { called = true; });
+  const store = { async pendingUpdateMail() { called = true; throw new Error('Empfänger abgefragt'); }, async releaseUpdateMail() {} };
+  const count = await deliverVerifiedUpdates(store, { deliveryEnabled: false }, 'weekly', async () => { called = true; return true; }, async () => { called = true; });
   assert.equal(count, 0);
   assert.equal(called, false);
 });
@@ -58,10 +59,11 @@ test('Freigegebener Testlauf bündelt offene Beiträge pro Person und verbucht n
       { userUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'lea@school.example', id: 4, title: 'Projekt' },
     ]; },
     async claimUpdateMail(user, ids, mode) { claims.push({ user, ids, mode }); return true; },
+    async releaseUpdateMail() {},
     async finishUpdateMail(user, ids, okay) { finishes.push({ user, ids, okay }); },
   };
   try {
-    assert.equal(await deliverPendingUpdates(store, { deliveryEnabled: true, password: 'test', testRecipient: TEST_RECIPIENT, issueRecipient: 'staff@school.example' }, 'weekly', async (_config, email, updates) => { sent.push({ email, updates }); }), 2);
+    assert.equal(await deliverVerifiedUpdates(store, { deliveryEnabled: true, password: 'test', testRecipient: TEST_RECIPIENT, issueRecipient: 'staff@school.example' }, 'weekly', async () => true, async (_config, email, updates) => { sent.push({ email, updates }); }), 2);
     assert.deepEqual(claims[0].ids, [3, 4]);
     assert.equal(claims[0].mode, 'weekly');
     assert.equal(sent.length, 1);
@@ -87,9 +89,10 @@ test('Persönliche Abos erreichen alle angemeldeten Schuladressen, aber niemals 
       ];
     },
     async claimUpdateMail(user) { claims.push(user); return true; },
+    async releaseUpdateMail() {},
     async finishUpdateMail() {},
   };
-  assert.equal(await deliverPendingUpdates(store, config, 'instant', async (_config, email) => sent.push(email)), 2);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'instant', async () => true, async (_config, email) => sent.push(email)), 2);
   assert.deepEqual(sent, ['l.test@school.example', 'andere@school.example']);
   assert.deepEqual(claims, ['a', 'c']);
   await assert.rejects(sendSubscriberDigest(config, 'staff@school.example', [{ id: 10, title: 'Test' }], async () => {}), /gesperrt/);

@@ -38,6 +38,9 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
     async createPhotoSet(user, name, eventDate) {
       const uuid = actor(user), label = title(name), day = date(eventDate);
       return transact(async (conn) => {
+        // Serialize simultaneous submissions for this owner before checking the five-set limit.
+        const owners = await conn.query('SELECT user_uuid FROM iserv_identities WHERE user_uuid = ? FOR UPDATE', [uuid]);
+        if (!owners.length) throw new Error('IServ-Identität nicht gespeichert.');
         const active = await conn.query("SELECT COUNT(*) AS n FROM photo_sets WHERE owner_uuid = ? AND status IN ('open','submitted')", [uuid]);
         if (Number(active[0].n) >= 5) throw new Error('Zu viele offene Fotoeinreichungen.');
         const result = await conn.query('INSERT INTO photo_sets (owner_uuid, title, event_date) VALUES (?, ?, ?)', [uuid, label, day]);
@@ -151,9 +154,11 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
     },
     async getPhotoAlbum(albumId) {
       const number = id(albumId);
-      const albums = await pool.query("SELECT id, title, description, cover_photo_id AS coverPhotoId, DATE_FORMAT(event_date, '%Y-%m-%d') AS eventDate FROM photo_albums WHERE id = ? AND deleted_at IS NULL", [number]);
+      const [albums, photos] = await Promise.all([
+        pool.query("SELECT id, title, description, cover_photo_id AS coverPhotoId, DATE_FORMAT(event_date, '%Y-%m-%d') AS eventDate FROM photo_albums WHERE id = ? AND deleted_at IS NULL", [number]),
+        pool.query(`${photoSelect} WHERE a.album_id = ? AND a.status = 'published' ORDER BY a.sequence_number`, [number]),
+      ]);
       if (!albums.length) return null;
-      const photos = await pool.query(`${photoSelect} WHERE a.album_id = ? AND a.status = 'published' ORDER BY a.sequence_number`, [number]);
       return { ...albums[0], photos };
     },
     async getPhotoAsset(user, photoId, editor = false) {

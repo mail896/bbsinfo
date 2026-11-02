@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCmsStore } from '../backend/cms-store.mjs';
-import { deliverPendingUpdates } from '../backend/notification-service.mjs';
+import { deliverVerifiedUpdates } from '../backend/notification-service.mjs';
 import { auditCsv, auditPage } from '../backend/web-pages.mjs';
 import { TEST_RECIPIENT } from '../backend/mail.mjs';
 
@@ -76,10 +76,11 @@ test('Nach SMTP-Annahme führt ein Datenbankfehler zu keinem zweiten Abschluss o
   const store = {
     async pendingUpdateMail() { calls.push('pending'); return [{ userUuid: user, email: 'admin@school.example', id: 3, title: 'Meldung' }]; },
     async claimUpdateMail() { calls.push('claim'); return true; },
+    async releaseUpdateMail() {},
     async finishUpdateMail(_user, _ids, sent) { calls.push(['finish', sent]); throw new Error('database unavailable'); },
   };
   const config = { password: 'test', testRecipient: TEST_RECIPIENT, issueRecipient: 'staff@school.example' };
-  assert.equal(await deliverPendingUpdates(store, config, 'instant', async () => { calls.push('send'); }), 0);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'instant', async () => true, async () => { calls.push('send'); }), 0);
   assert.deepEqual(calls, ['pending', 'claim', 'send', ['finish', true]]);
 });
 
@@ -92,12 +93,13 @@ test('Auch nach SMTP- und Abschlussfehler bleibt die Reservierung stehen und es 
       return ++scans === 1 ? [{ userUuid: user, email: 'admin@school.example', id: 3, title: 'Meldung' }] : [];
     },
     async claimUpdateMail() { calls.push('claim'); return true; },
+    async releaseUpdateMail() {},
     async finishUpdateMail(_user, _ids, sent) { calls.push(['finish', sent]); throw new Error('private database detail'); },
   };
   const config = { password: 'test', testRecipient: TEST_RECIPIENT, issueRecipient: 'staff@school.example' };
   const send = async () => { calls.push('send'); throw new Error('private SMTP detail'); };
-  assert.equal(await deliverPendingUpdates(store, config, 'instant', send), 0);
-  assert.equal(await deliverPendingUpdates(store, config, 'instant', send), 0);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'instant', async () => true, send), 0);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'instant', async () => true, send), 0);
   assert.deepEqual(calls, ['pending', 'claim', 'send', ['finish', false], 'pending']);
 });
 

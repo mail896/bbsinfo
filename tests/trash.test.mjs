@@ -121,15 +121,15 @@ test('Endgültige Bereinigung erhält Ausgabennummer bis zur Löschung und entfe
     async query(sql) {
       calls.push(sql);
       if (sql.startsWith('SELECT title, number, status FROM issues')) return [{ title: 'Ausgabe', number: 94, status: 'published' }];
-      if (sql.startsWith('SELECT title FROM submissions')) return [{ title: 'Profil' }];
+      if (sql.startsWith('SELECT title, stored_name AS storedName FROM submissions')) return [{ title: 'Profil', storedName: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }];
       if (sql.startsWith('SELECT')) return [];
       return { affectedRows: 1 };
     },
   };
   const pool = {
     async query(sql) {
-      if (sql.startsWith('SELECT id, title FROM issues')) return [{ id: 5, title: 'Ausgabe' }];
-      if (sql.startsWith('SELECT id, title, stored_name AS storedName FROM submissions')) return [{ id: 8, title: 'Profil', storedName: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }];
+      if (sql.startsWith('SELECT id FROM issues')) return [{ id: 5 }];
+      if (sql.startsWith('SELECT id FROM submissions')) return [{ id: 8 }];
       return [];
     },
     async getConnection() { return conn; },
@@ -142,6 +142,24 @@ test('Endgültige Bereinigung erhält Ausgabennummer bis zur Löschung und entfe
   assert.ok(issueDelete >= 0 && numberFree > issueDelete);
   assert.ok(fileDelete >= 0 && submissionDelete > fileDelete);
   assert.ok(calls.some((call) => typeof call === 'string' && call.startsWith('DELETE FROM issue_contributions')));
+});
+
+test('Gleichzeitig wiederhergestellter Steckbrief behält seine Datei', async () => {
+  let removed = false;
+  const connection = {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql) {
+      if (sql.startsWith('SELECT title, stored_name AS storedName FROM submissions')) return [];
+      if (sql.startsWith('SELECT')) return [];
+      throw new Error(`Unerwartete Änderung: ${sql}`);
+    },
+  };
+  const pool = {
+    async query(sql) { return sql.startsWith('SELECT id FROM submissions') ? [{ id: 8 }] : []; },
+    async getConnection() { return connection; },
+  };
+  await createCmsStore(pool).pruneTrash(async () => { removed = true; });
+  assert.equal(removed, false);
 });
 
 test('Papierkorb zeigt Ausgabe und private Einreichung als Text ohne HTML-Ausführung', () => {

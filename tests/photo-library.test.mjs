@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createHash, webcrypto } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { runInNewContext } from 'node:vm';
-import { receivePhoto, photoFile, photoSha256, removePhotoFiles } from '../backend/photo-files.mjs';
+import { receivePhoto, photoFile, photoSha256, removePhotoFiles, streamAlbumZip } from '../backend/photo-files.mjs';
 import { photoAlbumPage, photoDetailPage, photoIndexPage, photoMinePage, photoSetPage } from '../backend/photo-pages.mjs';
 import { home, searchPage } from '../backend/web-pages.mjs';
 import { photoStoreMethods } from '../backend/photo-store.mjs';
@@ -47,6 +48,22 @@ test('Fotooriginal bleibt unverändert, Vorschau enthält keine Metadaten und un
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('Ein Dateisystemfehler beim Foto-Upload wird kontrolliert zurückgegeben', async (context) => {
+  if (process.getuid?.() === 0) return context.skip('Root kann auch in schreibgeschützte Testordner schreiben.');
+  const root = await mkdtemp(join(tmpdir(), 'bbsinfo-photo-readonly-'));
+  const boundary = 'bbsinfo-photo-readonly-boundary';
+  const body = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="test.jpg"\r\nContent-Type: image/jpeg\r\n\r\nnot-an-image\r\n--${boundary}--\r\n`);
+  const request = Readable.from([body]);
+  request.headers = { 'content-type': `multipart/form-data; boundary=${boundary}`, 'content-length': String(body.length) };
+  try {
+    await chmod(root, 0o500);
+    await assert.rejects(receivePhoto(request, root, 0), /EACCES|EPERM/);
+  } finally {
+    await chmod(root, 0o700);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('ZIP ordnet Originale stabil und nennt Herkunft; Albumausgabe escaped Namen', async () => {
   const root = await mkdtemp(join(tmpdir(), 'bbsinfo-zip-test-'));
   try {
@@ -54,11 +71,20 @@ test('ZIP ordnet Originale stabil und nennt Herkunft; Albumausgabe escaped Namen
     const path = join(root, stored);
     const { writeFile } = await import('node:fs/promises');
     await writeFile(path, Buffer.from('original-photo-data'));
-    const payload = { root, title: 'Weihnachtsfeier 2026', photos: [{ name: stored, originalName: '=SUM(1,2).jpg', uploader: 'Test Kollegin', date: '2026-12-17', sequence: 1, mediaType: 'image/jpeg' }] };
-    const zipped = spawnSync(python, [new URL('../backend/photo_zip.py', import.meta.url).pathname], { input: JSON.stringify(payload) });
-    assert.equal(zipped.status, 0);
-    const inspected = spawnSync(python, ['-c', 'import io,json,sys,zipfile\nz=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()))\nprint(json.dumps({"names":z.namelist(),"original":z.read(z.namelist()[0]).decode(),"manifest":z.read(z.namelist()[1]).decode("utf-8-sig")}))'], { input: zipped.stdout });
-    assert.equal(inspected.status, 0);
+    const zipAlbum = { title: 'Weihnachtsfeier 2026' };
+    const photos = [{ storedName: stored, originalName: '=SUM(1,2).jpg', uploaderName: 'Test Kollegin', capturedDate: '2026-12-17', sequenceNumber: 1, mediaType: 'image/jpeg' }];
+    const response = new PassThrough();
+    const chunks = [];
+    response.writeHead = (status, headers) => {
+      assert.equal(status, 200);
+      assert.equal(headers['Content-Type'], 'application/zip');
+      assert.match(headers['Content-Disposition'], /bbs-info_weihnachtsfeier-2026\.zip/);
+    };
+    response.on('data', (chunk) => chunks.push(chunk));
+    await streamAlbumZip(response, root, zipAlbum, photos, 'bbs-info_weihnachtsfeier-2026.zip');
+    await finished(response);
+    const inspected = spawnSync(python, ['-c', 'import io,json,sys,zipfile\nz=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()))\nprint(json.dumps({"names":z.namelist(),"original":z.read(z.namelist()[0]).decode(),"manifest":z.read(z.namelist()[1]).decode("utf-8-sig")}))'], { input: Buffer.concat(chunks) });
+    assert.equal(inspected.status, 0, inspected.stderr?.toString());
     const result = JSON.parse(inspected.stdout.toString());
     assert.deepEqual(result.names, ['bbs-info_weihnachtsfeier-2026/0001_2026-12-17.jpg', 'bbs-info_weihnachtsfeier-2026/bilder.csv']);
     assert.equal(result.original, 'original-photo-data');

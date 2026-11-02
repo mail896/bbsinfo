@@ -18,7 +18,9 @@ export function dailyCutoffUtc(timestamp) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-export async function deliverPendingUpdates(store, config, mode, send = sendSubscriberDigest, cutoffUtc = null, verifyGroup = null, scanState = null, checkAfterClaim = false) {
+export async function deliverVerifiedUpdates(store, config, mode, verifyGroup, send = sendSubscriberDigest, cutoffUtc = null, scanState = null) {
+  if (typeof verifyGroup !== 'function') throw new Error('IDM-Prüfer fehlt; persönlicher Mailversand pausiert.');
+  if (typeof store?.releaseUpdateMail !== 'function') throw new Error('Freigabe für Mailreservierungen fehlt.');
   if (!subscriberDeliveryEnabled(config)) return 0;
   const rows = await store.pendingUpdateMail(mode, 50, cutoffUtc, scanState?.afterUserUuid || null);
   const grouped = new Map();
@@ -31,25 +33,23 @@ export async function deliverPendingUpdates(store, config, mode, send = sendSubs
   for (const [userUuid, group] of grouped) {
     const ids = group.updates.map((row) => row.kind === 'album' ? `album:${Number(row.id)}` : Number(row.id));
     try {
-      if (verifyGroup && (await verifyGroup(userUuid, group.email)) !== true) continue;
+      if ((await verifyGroup(userUuid, group.email)) !== true) continue;
     } catch (error) {
       // Continue after this account next tick, then wrap back to retry it later.
       if (scanState) scanState.afterUserUuid = userUuid;
       throw error;
     }
     if (!(await store.claimUpdateMail(userUuid, ids, mode, cutoffUtc))) continue;
-    if (checkAfterClaim) {
-      let stillMember;
-      try { stillMember = (await verifyGroup(userUuid, group.email)) === true; }
-      catch (error) {
-        if (scanState) scanState.afterUserUuid = userUuid;
-        await store.releaseUpdateMail(userUuid, ids);
-        throw error;
-      }
-      if (!stillMember) {
-        await store.releaseUpdateMail(userUuid, ids);
-        continue;
-      }
+    let stillMember;
+    try { stillMember = (await verifyGroup(userUuid, group.email)) === true; }
+    catch (error) {
+      if (scanState) scanState.afterUserUuid = userUuid;
+      await store.releaseUpdateMail(userUuid, ids);
+      throw error;
+    }
+    if (!stillMember) {
+      await store.releaseUpdateMail(userUuid, ids);
+      continue;
     }
     try {
       await send(config, group.email, group.updates);
@@ -71,11 +71,4 @@ export async function deliverPendingUpdates(store, config, mode, send = sendSubs
   // A revoked account must not keep the first 50 pending rows ahead of other subscribers forever.
   if (scanState) scanState.afterUserUuid = rows.length === 50 ? rows.at(-1).userUuid : null;
   return delivered;
-}
-
-// All production callers must enter here; the legacy helper remains for isolated transport tests.
-export async function deliverVerifiedUpdates(store, config, mode, verifyGroup, send = sendSubscriberDigest, cutoffUtc = null, scanState = null) {
-  if (typeof verifyGroup !== 'function') throw new Error('IDM-Prüfer fehlt; persönlicher Mailversand pausiert.');
-  if (typeof store?.releaseUpdateMail !== 'function') throw new Error('Freigabe für Mailreservierungen fehlt.');
-  return deliverPendingUpdates(store, config, mode, send, cutoffUtc, verifyGroup, scanState, true);
 }

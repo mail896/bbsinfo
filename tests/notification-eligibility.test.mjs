@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deliverPendingUpdates, deliverVerifiedUpdates } from '../backend/notification-service.mjs';
+import { deliverVerifiedUpdates } from '../backend/notification-service.mjs';
 import { TEST_RECIPIENT } from '../backend/mail.mjs';
 
 const config = { password: 'test', testRecipient: TEST_RECIPIENT, issueRecipient: 'staff@school.example' };
@@ -14,33 +14,33 @@ const makeStore = (calls) => ({
 
 test('Entzogene Kollegiumsgruppe verhindert Reservierung und Mailversand', async () => {
   const calls = [];
-  assert.equal(await deliverPendingUpdates(makeStore(calls), config, 'instant', async () => calls.push('send'), null, async (uuid) => {
+  assert.equal(await deliverVerifiedUpdates(makeStore(calls), config, 'instant', async (uuid) => {
     assert.equal(uuid, userUuid);
     calls.push('idm');
     return false;
-  }), 0);
+  }, async () => calls.push('send')), 0);
   assert.deepEqual(calls, ['pending', 'idm']);
 });
 
 test('IDM-Ausfall verhindert Reservierung und Mailversand und bleibt für nächsten Lauf wiederholbar', async () => {
   const calls = [];
-  await assert.rejects(() => deliverPendingUpdates(makeStore(calls), config, 'instant', async () => calls.push('send'), null, async () => {
+  await assert.rejects(() => deliverVerifiedUpdates(makeStore(calls), config, 'instant', async () => {
     calls.push('idm');
     throw new Error('IDM nicht erreichbar');
-  }), /IDM/);
+  }, async () => calls.push('send')), /IDM/);
   assert.deepEqual(calls, ['pending', 'idm']);
 });
 
 test('Aktuell berechtigtes Kollegiumsmitglied wird erst nach IDM-Prüfung reserviert und versendet', async () => {
   const calls = [];
-  assert.equal(await deliverPendingUpdates(makeStore(calls), config, 'instant', async () => calls.push('send'), null, async () => { calls.push('idm'); return true; }), 1);
-  assert.deepEqual(calls, ['pending', 'idm', 'claim', 'send', 'finish']);
+  assert.equal(await deliverVerifiedUpdates(makeStore(calls), config, 'instant', async () => { calls.push('idm'); return true; }, async () => calls.push('send')), 1);
+  assert.deepEqual(calls, ['pending', 'idm', 'claim', 'idm', 'send', 'finish']);
 });
 
 test('Unklare IDM-Antwort zählt nie als Gruppenfreigabe', async () => {
   const calls = [];
-  assert.equal(await deliverPendingUpdates(makeStore(calls), config, 'instant', async () => calls.push('send'), null, async () => undefined), 0);
-  assert.deepEqual(calls, ['pending']);
+  assert.equal(await deliverVerifiedUpdates(makeStore(calls), config, 'instant', async () => { calls.push('idm'); return undefined; }, async () => calls.push('send')), 0);
+  assert.deepEqual(calls, ['pending', 'idm']);
 });
 
 test('Entzogene Mitglieder am Anfang einer vollen Auswahl blockieren andere Abos nicht dauerhaft', async () => {
@@ -60,9 +60,9 @@ test('Entzogene Mitglieder am Anfang einer vollen Auswahl blockieren andere Abos
   };
   const verify = async (uuid) => uuid === eligible;
   const send = async (_config, recipient) => calls.push(['send', recipient]);
-  assert.equal(await deliverPendingUpdates(store, config, 'instant', send, null, verify, scanState), 0);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'instant', verify, send, null, scanState), 0);
   assert.equal(scanState.afterUserUuid, revoked);
-  assert.equal(await deliverPendingUpdates(store, config, 'instant', send, null, verify, scanState), 1);
+  assert.equal(await deliverVerifiedUpdates(store, config, 'instant', verify, send, null, scanState), 1);
   assert.equal(scanState.afterUserUuid, null);
   assert.deepEqual(calls.filter(([kind]) => kind === 'send'), [['send', 'neu@school.example']]);
 });

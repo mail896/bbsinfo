@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { photoFile, photoSha256, receivePhoto, removePhotoFiles, streamPhoto, streamAlbumZip } from './photo-files.mjs';
+import { photoFile, photoSha256, receivePhoto, removePhotoFiles, prunePhotoFiles, streamPhoto, streamAlbumZip } from './photo-files.mjs';
 import { saveSubmissionFile, removeSubmissionFile } from './submission-files.mjs';
 import { photoIndexPage, photoMinePage, photoSetPage, photoReviewPage, photoAlbumPage, photoDetailPage, privatePhotoPage, photoCommentHistoryPage } from './photo-pages.mjs';
 import { page, base } from './web-pages.mjs';
@@ -10,13 +10,7 @@ const missing = (send) => send(404, page('Nicht gefunden', '<section><h1>Inhalt 
 const forbidden = (send) => send(403, page('Zugriff verweigert', '<section><h1>Zugriff verweigert</h1></section>'));
 const slug = (value) => String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'album';
 function removeRejectedSoon(store, root) {
-  setImmediate(() => { void (async () => {
-    for (let batch = 0; batch < 10; batch++) {
-      const files = await store.expiredPhotoFiles();
-      if (!files.length) break;
-      for (const file of files) await store.purgeExpiredPhoto(file.id, (name) => removePhotoFiles(root, name));
-    }
-  })().catch(() => process.stderr.write('BBS Info: Abgelehnte Fotos konnten nicht bereinigt werden.\n')); });
+  setImmediate(() => { void prunePhotoFiles(store, root).catch(() => process.stderr.write('BBS Info: Abgelehnte Fotos konnten nicht bereinigt werden.\n')); });
 }
 const patterns = {
   set: /^\/bbsinfo\/photos\/sets\/([1-9][0-9]*)$/,
@@ -99,9 +93,13 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
       if (!album) return missing(send);
       for (const photo of album.photos) photoFile(photoRoot, photo.storedName);
       if (method === 'GET') await store.recordAudit(identity.uuid, 'photo_album.zip', 'photo_album', album.id, album.title);
-      res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="bbs-info_${slug(album.title)}.zip"` });
-      if (method === 'HEAD') return res.end();
-      return streamAlbumZip(res, photoRoot, album, album.photos);
+      const filename = `bbs-info_${slug(album.title)}.zip`;
+      if (method === 'HEAD') { res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${filename}"` }); return res.end(); }
+      try { return await streamAlbumZip(res, photoRoot, album, album.photos, filename); }
+      catch {
+        if (res.headersSent) return res.destroy();
+        return send(503, page('Fotoarchiv ausgelastet', '<section><h1>Download derzeit ausgelastet</h1><p>Bitte später erneut versuchen.</p></section>'));
+      }
     }
     const approved = patterns.approvedPreview.exec(path);
     if ((match = approved || patterns.preview.exec(path) || patterns.original.exec(path))) {
@@ -118,9 +116,9 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
       const photo = await store.getPhotoAsset(identity.uuid, match[1], identity.editor);
       if (!photo) return missing(send);
       if (photo.status !== 'published') return send(200, privatePhotoPage(photo));
-      const album = await store.getPhotoAlbum(photo.albumId);
+      const [album, comments] = await Promise.all([store.getPhotoAlbum(photo.albumId), store.getPhotoComments(photo.id)]);
       if (!album) return missing(send);
-      return send(200, photoDetailPage(photo, album, await store.getPhotoComments(photo.id), csrf, identity));
+      return send(200, photoDetailPage(photo, album, comments, csrf, identity));
     }
     return missing(send);
   }

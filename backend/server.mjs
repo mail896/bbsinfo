@@ -17,7 +17,7 @@ import { countPdfPages, renderPdfPage } from './submission-preview.mjs';
 import { optimizeEditorUpload, renderEditorImageVariant } from './editor-image.mjs';
 import { cleanRichText, plainFromHtml } from './rich-text.mjs';
 import { handlePhotoRoute } from './photo-routes.mjs';
-import { removePhotoFiles } from './photo-files.mjs';
+import { prunePhotoFiles } from './photo-files.mjs';
 import { base, page, feedbackToast, landing, home, searchPage, updatesPage, notificationsPage, updateDetailPage, contributionsPage, editorPage, settingsPage, trashPage, digestTestPage, issuesPage, issuePage, issueEditorPage, issueEditPage, issueMailPage, auditPage, auditCsv, statsPage, submissionsPage, archivePage } from './web-pages.mjs';
 
 const origin = 'https://apps.school.example';
@@ -143,13 +143,10 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
     const method = { updates: 'listIssueUpdates', contributions: 'listIssueContributions', submissions: 'listIssueSubmissions' }[kind];
     if (!method) throw new Error('Ungültige Ausgabenquelle.');
     const result = await cmsStore[method]({ query, used, page: pageNumber });
-    // Array-basierte Store-Anbindungen bleiben lesbar; der eingebaute Store filtert bereits in SQL.
-    const legacy = Array.isArray(result) ? result.filter((item) => !!item.usedInIssues === used && (!query || [item.title, item.author, item.ownerName].some((value) => String(value || '').toLocaleLowerCase('de').includes(query.toLocaleLowerCase('de'))))) : null;
-    const state = legacy ? { items: legacy.slice((pageNumber - 1) * 30, pageNumber * 30), hasMore: legacy.length > pageNumber * 30, page: pageNumber } : result;
-    if (!state || !Array.isArray(state.items) || state.items.length > 30 || typeof state.hasMore !== 'boolean') throw new Error('Ungültige Ausgabenquelle.');
+    if (!result || !Array.isArray(result.items) || result.items.length > 30 || typeof result.hasMore !== 'boolean') throw new Error('Ungültige Ausgabenquelle.');
     return {
-      items: state.items.map((item) => ({ id: Number(item.id), title: String(item.title || ''), publishedAtUtc: String(item.publishedAtUtc || ''), author: String(item.author || ''), ownerName: String(item.ownerName || ''), usedInIssues: item.usedInIssues ? String(item.usedInIssues) : null, linked: !!item.linked })),
-      hasMore: state.hasMore,
+      items: result.items.map((item) => ({ id: Number(item.id), title: String(item.title || ''), publishedAtUtc: String(item.publishedAtUtc || ''), author: String(item.author || ''), ownerName: String(item.ownerName || ''), usedInIssues: item.usedInIssues ? String(item.usedInIssues) : null, linked: !!item.linked })),
+      hasMore: result.hasMore,
       page: pageNumber,
     };
   }
@@ -253,22 +250,14 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
   }
   const notificationTimer = setInterval(() => { void runNotifications(); }, 60000);
   notificationTimer.unref();
-  async function prunePhotoFiles() {
-    if (!cmsStore?.expiredPhotoFiles || !photoRoot) return;
-    for (let batch = 0; batch < 10; batch++) {
-      const files = await cmsStore.expiredPhotoFiles();
-      if (!files.length) break;
-      for (const file of files) await cmsStore.purgeExpiredPhoto(file.id, (name) => removePhotoFiles(photoRoot, name));
-    }
-  }
-  if (photoRoot) setImmediate(() => { void prunePhotoFiles().catch(() => process.stderr.write('BBS Info: Fotobereinigung beim Start fehlgeschlagen.\n')); });
+  if (cmsStore?.expiredPhotoFiles && photoRoot) setImmediate(() => { void prunePhotoFiles(cmsStore, photoRoot).catch(() => process.stderr.write('BBS Info: Fotobereinigung beim Start fehlgeschlagen.\n')); });
   const retentionTimer = setInterval(() => {
     if (cmsStore?.pruneSearchEvents) void cmsStore.pruneSearchEvents().catch(() => process.stderr.write('BBS Info: Suchdatenbereinigung fehlgeschlagen.\n'));
     if (cmsStore?.pruneTrash && submissionRoot) void cmsStore.pruneTrash(async (name) => {
       try { await removeSubmissionFile(submissionRoot, name); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }).catch(() => process.stderr.write('BBS Info: Papierkorbbereinigung fehlgeschlagen.\n'));
-    if (cmsStore?.expiredPhotoFiles && photoRoot) void prunePhotoFiles().catch(() => process.stderr.write('BBS Info: Fotobereinigung fehlgeschlagen.\n'));
+    if (cmsStore?.expiredPhotoFiles && photoRoot) void prunePhotoFiles(cmsStore, photoRoot).catch(() => process.stderr.write('BBS Info: Fotobereinigung fehlgeschlagen.\n'));
   }, 24 * 60 * 60 * 1000);
   retentionTimer.unref();
   const app = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {

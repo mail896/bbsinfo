@@ -107,6 +107,10 @@ function fakeCmsStore() {
   const issueMail = new Map();
   const editorImages = new Map();
   let appSettings = { ...defaultAppSettings };
+  const sourcePage = (rows, { query = '', used = false, page = 1 } = {}) => {
+    const matching = rows.filter((item) => !!item.usedInIssues === used && (!query || [item.title, item.author, item.ownerName].some((value) => String(value || '').toLocaleLowerCase('de').includes(query.toLocaleLowerCase('de')))));
+    return { items: matching.slice((page - 1) * 30, page * 30), hasMore: matching.length > page * 30, page };
+  };
   return {
     events,
     async listTrash(actor, editor = false) { return { updates: editor ? trash.updates : [], issues: editor ? trash.issues : [], contributions: trash.contributions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })), submissions: trash.submissions.filter((row) => editor || row.ownerUuid === actor).map((row) => ({ ...row, ownerName: identities.get(row.ownerUuid) })) }; },
@@ -136,7 +140,7 @@ function fakeCmsStore() {
       return { items: ordered.slice((page - 1) * size, page * size), page, pageCount: Math.max(1, Math.ceil(ordered.length / size)), hasNext: ordered.length > page * size };
     },
     async listPublishedUpdates() { return published; },
-    async listIssueUpdates() { return published.map((item) => ({ ...item, usedInIssues: issues.filter((issue) => issue.updates.some((update) => Number(update.updateId) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
+    async listIssueUpdates(options) { return sourcePage(published.map((item) => ({ ...item, usedInIssues: issues.filter((issue) => issue.updates.some((update) => Number(update.updateId) === Number(item.id))).map((issue) => issue.number).join(',') || null })), options); },
     async listDigestTestUpdates() { return [...published].reverse().slice(0, 50); },
     async getPublishedUpdate(id) { return published.find((item) => item.id === Number(id)) || null; },
     async homeHighlights() { return { updates: published.slice(-5).reverse().map((row) => ({ id: row.id, title: row.title, excerpt: row.body, publishedAt: row.publishedAt })), issues: issues.slice(-3).reverse() }; },
@@ -153,7 +157,7 @@ function fakeCmsStore() {
     async recordSearch(actor, term, source) { events.push({ actor, action: 'search.term', term, source }); },
     async listOwnContributions(actor) { return contributions.filter((item) => item.ownerUuid === actor); },
     async listSubmittedContributions() { return contributions.filter((item) => item.status === 'submitted').map((item) => ({ ...item, author: identities.get(item.ownerUuid) })); },
-    async listIssueContributions() { return contributions.filter((item) => item.status === 'submitted' || issues.some((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id)))).map((item) => ({ ...item, author: identities.get(item.ownerUuid), usedInIssues: issues.filter((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
+    async listIssueContributions(options) { return sourcePage(contributions.filter((item) => item.status === 'submitted' || issues.some((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id)))).map((item) => ({ ...item, author: identities.get(item.ownerUuid), usedInIssues: issues.filter((issue) => issue.contributions?.some((entry) => Number(entry.contributionId) === Number(item.id))).map((issue) => issue.number).join(',') || null })), options); },
     async saveContribution(actor, id, title, body, bodyHtml) { const row = id === null ? { id: contributions.length + 1, ownerUuid: actor, status: 'submitted' } : contributions.find((item) => item.id === Number(id) && item.ownerUuid === actor && item.status === 'submitted'); if (!row) return null; Object.assign(row, { title, body, bodyHtml }); if (id === null) contributions.push(row); return row.id; },
     async deleteContribution(actor, id, editor = false) { const index = contributions.findIndex((item) => item.id === Number(id) && (editor || item.ownerUuid === actor) && item.status === 'submitted'); if (index < 0) return false; trash.contributions.push({ ...contributions.splice(index, 1)[0], deletedAtUtc: '2026-10-29 10:00:00' }); return true; },
     async listAudit(before, limit, filters = {}) { return events.map((event, id) => ({ id, occurredAt: '2026-10-26 12:00:00', actorUuid: event.actor, actorName: identities.get(event.actor), action: event.action, objectType: event.type, objectId: event.id, objectTitle: event.title || (event.type === 'update' ? [...drafts, ...published].find((row) => row.id === event.id)?.title : null) })).filter((event) => (!filters.actor || event.actorUuid === filters.actor || event.actorName?.toLowerCase().includes(filters.actor.toLowerCase())) && (!filters.action || event.action === filters.action)); },
@@ -181,7 +185,7 @@ function fakeCmsStore() {
     async listOwnSubmissions(actor) { return submissions.filter((item) => item.ownerUuid === actor); },
     async listAllSubmissions() { return submissions.map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid) })); },
     async listTakenOverSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), linked: [...drafts, ...published, ...issues].some((entry) => entry.attachments?.some((file) => file?.id === item.id)) })); },
-    async listIssueSubmissions() { return submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), linked: [...drafts, ...published, ...issues].some((entry) => entry.attachments?.some((file) => file?.id === item.id)), usedInIssues: issues.filter((issue) => issue.attachments?.some((file) => Number(file.id) === Number(item.id))).map((issue) => issue.number).join(',') || null })); },
+    async listIssueSubmissions(options) { return sourcePage(submissions.filter((item) => item.status === 'taken_over').map((item) => ({ ...item, ownerName: identities.get(item.ownerUuid), linked: [...drafts, ...published, ...issues].some((entry) => entry.attachments?.some((file) => file?.id === item.id)), usedInIssues: issues.filter((issue) => issue.attachments?.some((file) => Number(file.id) === Number(item.id))).map((issue) => issue.number).join(',') || null })), options); },
     async getSubmission(id, trashed = false) { return (trashed ? trash.submissions : submissions).find((item) => item.id === Number(id)) || null; },
     async isPublishedSubmission(id) { return published.some((item) => item.attachments?.some((file) => file?.id === Number(id))) || issues.some((issue) => issue.attachments?.some((file) => file?.id === Number(id))); },
     async takeOverSubmission(actor, id) { const item = submissions.find((row) => row.id === Number(id) && row.status === 'submitted'); if (!item) return false; item.status = 'taken_over'; events.push({ actor, action: 'submission.take_over' }); return true; },

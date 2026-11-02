@@ -4,6 +4,8 @@ import { createWriteStream, lstatSync, createReadStream, statfsSync } from 'node
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { validateSubmissionRoot } from './submission-files.mjs';
 import { runMediaJob, createMediaLimiter } from './media-jobs.mjs';
@@ -13,6 +15,7 @@ const maxBytes = 40 * 1024 * 1024;
 const previewScript = fileURLToPath(new URL('./photo_preview.py', import.meta.url));
 const zipScript = fileURLToPath(new URL('./photo_zip.py', import.meta.url));
 const runPhotoJob = createMediaLimiter({ maxActive: 1, maxQueued: 8, maxWaitMs: 45000 });
+const runZipJob = createMediaLimiter({ maxActive: 1, maxQueued: 4, maxWaitMs: 15000 });
 const digestCache = new Map();
 export const photoPath = (root, name, preview = false) => {
   if (!uuid.test(name)) throw new Error('Ungültiger Fotodateiname.');
@@ -27,6 +30,13 @@ export const photoFile = (root, name, preview = false) => {
 export async function removePhotoFiles(root, name) {
   for (const preview of [false, true]) try { await unlink(photoPath(root, name, preview)); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+export async function prunePhotoFiles(store, root) {
+  for (let batch = 0; batch < 10; batch++) {
+    const files = await store.expiredPhotoFiles();
+    if (!files.length) break;
+    for (const file of files) await store.purgeExpiredPhoto(file.id, (name) => removePhotoFiles(root, name));
+  }
 }
 export async function photoSha256(root, name) {
   const file = photoFile(root, name);
@@ -63,19 +73,17 @@ export async function receivePhoto(req, root, minFreeBytes = 10 * 1024 * 1024 * 
     seen = true;
     originalName = info.filename;
     const out = createWriteStream(path, { flags: 'wx', mode: 0o600 });
-    fileDone = (async () => {
-      try {
-        for await (const chunk of stream) {
-          size += chunk.length;
-          hash.update(chunk);
-          if (prefix.length < 32) prefix = Buffer.concat([prefix, chunk.subarray(0, 32 - prefix.length)]);
-          if (size > maxBytes) throw new Error('Foto zu groß.');
-          if (!out.write(chunk)) await new Promise((resolve, reject) => { out.once('drain', resolve); out.once('error', reject); });
-        }
-        await new Promise((resolve, reject) => out.end((error) => error ? reject(error) : resolve()));
-        if (stream.truncated) invalid = true;
-      } catch (error) { out.destroy(); throw error; }
-    })();
+    fileDone = pipeline(stream, new Transform({
+      transform(chunk, _encoding, done) {
+        size += chunk.length;
+        if (size > maxBytes) return done(new Error('Foto zu groß.'));
+        hash.update(chunk);
+        if (prefix.length < 32) prefix = Buffer.concat([prefix, chunk.subarray(0, 32 - prefix.length)]);
+        done(null, chunk);
+      },
+    }), out).then(() => { if (stream.truncated) invalid = true; });
+    // The parser may finish later; keep an immediate rejection handler on the file job.
+    fileDone.catch(() => {});
   });
   parser.on('field', () => { invalid = true; });
   for (const event of ['filesLimit', 'fieldsLimit', 'partsLimit']) parser.on(event, () => { invalid = true; });
@@ -113,13 +121,21 @@ export async function receivePhoto(req, root, minFreeBytes = 10 * 1024 * 1024 * 
 export function streamPhoto(res, file) {
   createReadStream(file.path).on('error', () => res.destroy()).pipe(res);
 }
-export function streamAlbumZip(res, root, album, photos) {
+export function streamAlbumZip(res, root, album, photos, filename) {
   const payload = { root: validateSubmissionRoot(root), title: album.title, photos: photos.map((p) => ({ name: p.storedName, originalName: p.originalName, uploader: p.uploaderName || p.uploaderUuid, date: p.capturedDate, sequence: p.sequenceNumber, mediaType: p.mediaType })) };
-  const child = spawn('/usr/bin/python3', [zipScript], { stdio: ['pipe', 'pipe', 'ignore'] });
-  child.stdin.end(JSON.stringify(payload));
-  child.stdout.on('error', () => child.kill('SIGKILL'));
-  res.on('close', () => child.kill('SIGKILL'));
-  child.stdout.pipe(res);
-  child.once('error', () => res.destroy());
-  child.once('close', (code) => { if (code !== 0 && !res.writableEnded) res.destroy(); });
+  return runZipJob(() => new Promise((resolve, reject) => {
+    if (res.destroyed) return resolve();
+    const child = spawn('/usr/bin/python3', [zipScript], { stdio: ['pipe', 'pipe', 'ignore'] });
+    res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${filename}"` });
+    child.stdin.on('error', () => child.kill('SIGKILL'));
+    child.stdin.end(JSON.stringify(payload));
+    child.stdout.on('error', () => child.kill('SIGKILL'));
+    res.on('close', () => child.kill('SIGKILL'));
+    child.stdout.pipe(res);
+    child.once('error', (error) => { res.destroy(); reject(error); });
+    child.once('close', (code) => {
+      if (code !== 0 && !res.writableEnded) res.destroy();
+      resolve();
+    });
+  }));
 }
