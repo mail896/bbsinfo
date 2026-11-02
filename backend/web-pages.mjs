@@ -47,7 +47,7 @@ function renderBody(row) {
   return `<div class="rich-body">${markup}</div>`;
 }
 
-function numberedPager(pageNumber, pageCount, href, label = 'Seitennavigation') {
+export function numberedPager(pageNumber, pageCount, href, label = 'Seitennavigation') {
   if (pageCount <= 1) return '';
   const visible = new Set([1, 2, pageCount - 2, pageCount - 1, pageCount, pageNumber - 1, pageNumber, pageNumber + 1]);
   const numbers = [...visible].filter((number) => number >= 1 && number <= pageCount).sort((a, b) => a - b);
@@ -120,8 +120,9 @@ export function home(identity, csrf, archiveAvailable, cmsAvailable, submissions
 export function searchPage(query, web, archive) {
   const issues = web.issues.length ? `<h2>Neue Ausgaben</h2><ul>${web.issues.map((row) => `<li><a href="${base}issues/${Number(row.number)}">BBS Info ${Number(row.number)}: ${htmlEscape(row.title)}</a>${row.excerpt ? `<p>${htmlEscape(row.excerpt)}</p>` : ''}</li>`).join('')}</ul>` : '';
   const updates = web.updates.length ? `<h2>Updates</h2><ul>${web.updates.map((row) => `<li><a href="${base}updates/${Number(row.id)}">${htmlEscape(row.title)}</a>${row.excerpt ? `<p>${htmlEscape(row.excerpt)}</p>` : ''}</li>`).join('')}</ul>` : '';
+  const albums = web.albums?.length ? `<h2>Fotoalben</h2><ul>${web.albums.map((row) => `<li><a href="${base}photos/albums/${Number(row.id)}">${htmlEscape(row.title)}</a><p>${htmlEscape(row.eventDate || 'Datum offen')} · ${Number(row.photoCount)} Bilder</p></li>`).join('')}</ul>` : '';
   const historical = archive.length ? `<h2>Historische PDFs</h2><ul>${archive.map((row) => `<li><a href="${base}archive/${Number(row.archiveId)}.pdf" target="_blank" rel="noopener noreferrer">Ausgabe ${Number(row.number)}, Seite ${Number(row.page)}</a>${row.excerpt ? `<p>${htmlEscape(row.excerpt)}</p>` : ''}</li>`).join('')}</ul>` : '';
-  return page('Suche', `<section><p><a href="${base}">← Zur Startseite</a></p><h1>Suche</h1><form method="get" action="${base}search/"><label>Suchbegriff <input name="q" minlength="2" maxlength="100" value="${htmlEscape(query)}" required></label> <button type="submit">Suchen</button></form>${issues || updates || historical ? issues + updates + historical : '<p>Keine Treffer gefunden.</p>'}</section>`);
+  return page('Suche', `<section><p><a href="${base}">← Zur Startseite</a></p><h1>Suche</h1><form method="get" action="${base}search/"><label>Suchbegriff <input name="q" minlength="2" maxlength="100" value="${htmlEscape(query)}" required></label> <button type="submit">Suchen</button></form>${issues || updates || albums || historical ? issues + updates + albums + historical : '<p>Keine Treffer gefunden.</p>'}</section>`);
 }
 
 export function updatesPage(updates, mode, csrf, pagination = null, mailActive = false, idmPaused = false) {

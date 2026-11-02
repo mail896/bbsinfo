@@ -1,4 +1,4 @@
-import { page, base, personalPage } from './web-pages.mjs';
+import { page, base, personalPage, numberedPager } from './web-pages.mjs';
 import { htmlEscape as esc } from './html-escape.mjs';
 
 const photoUrl = (id) => `${base}photos/${Number(id)}`;
@@ -9,8 +9,18 @@ const uploadProgress = '<div class="photo-upload-progress" data-photo-upload-pro
 function thumb(photo) {
   return `<a class="photo-tile" href="${photoUrl(photo.id)}"><img src="${previewUrl(photo.id)}" loading="lazy" alt="Foto ${Number(photo.sequenceNumber || photo.id)} von ${esc(photo.uploaderName || 'unbekannt')}"></a>`;
 }
-export function photoIndexPage(albums, query) {
-  return page('Fotolibrary', `<section class="photo-shell"><p><a href="${base}">← Zur Startseite</a></p><div class="photo-head"><div><span class="eyebrow">KOLLEGIUM</span><h1>Fotolibrary</h1><p>Gemeinsame Bilder von Veranstaltungen und aus dem Schulleben.</p></div></div><form class="photo-search" method="get" action="${base}photos/"><label for="photo-q">Alben suchen</label><input id="photo-q" name="q" value="${esc(query)}" maxlength="100" placeholder="z. B. Weihnachtsfeier"><button type="submit">Suchen</button></form><div class="photo-albums">${albums.length ? albums.map((album) => `<a class="photo-album-card" href="${albumUrl(album.id)}"><img src="${previewUrl(album.coverId)}" loading="lazy" alt=""><strong>${esc(album.title)}</strong><span>${esc(album.eventDate || 'Datum offen')} · ${Number(album.photoCount)} Bilder</span></a>`).join('') : '<p>Noch keine passenden Alben vorhanden.</p>'}</div></section>`);
+export function photoIndexPage(listing, query, selectedYear = '', years = []) {
+  const href = (year = '', page = 1) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (year) params.set('year', year);
+    if (page > 1) params.set('page', String(page));
+    return `${base}photos/${params.size ? `?${params}` : ''}`;
+  };
+  const yearLink = (year, label) => `<a href="${esc(href(year))}"${selectedYear === year ? ' aria-current="page"' : ''}>${esc(label)}</a>`;
+  const yearNav = `<nav class="year-nav" aria-label="Albumjahr wählen">${yearLink('', 'Alle Jahre')}${years.map((entry) => yearLink(entry.year === null ? 'undated' : String(entry.year), entry.year === null ? 'Ohne Datum' : String(entry.year))).join('')}</nav>`;
+  const albums = listing.items;
+  return page('Fotolibrary', `<section class="photo-shell"><p><a href="${base}">← Zur Startseite</a></p><div class="photo-head"><div><span class="eyebrow">KOLLEGIUM</span><h1>Fotolibrary</h1><p>Gemeinsame Bilder von Veranstaltungen und aus dem Schulleben.</p></div></div><form class="photo-search" method="get" action="${base}photos/"><label for="photo-q">Alben suchen</label><input id="photo-q" name="q" value="${esc(query)}" maxlength="100" placeholder="z. B. Weihnachtsfeier"><button type="submit">Suchen</button></form>${yearNav}<p class="meta">${Number(listing.total)} ${Number(listing.total) === 1 ? 'Album' : 'Alben'}</p><div class="photo-albums">${albums.length ? albums.map((album) => `<a class="photo-album-card" href="${albumUrl(album.id)}"><img src="${previewUrl(album.coverId)}" loading="lazy" alt=""><strong>${esc(album.title)}</strong><span>${esc(album.eventDate || 'Datum offen')} · ${Number(album.photoCount)} Bilder</span></a>`).join('') : '<p>Noch keine passenden Alben vorhanden.</p>'}</div>${numberedPager(listing.page, listing.pageCount, (number) => href(selectedYear, number), 'Albumseiten')}</section>`);
 }
 export function photoMinePage(sets, csrf, submissionsAvailable = true) {
   return personalPage('photos', `<div class="photo-shell"><p>Wähle einen Bilderordner oder mehrere Dateien. Als Titel wird der Ordnername vorgeschlagen; das Aufnahmedatum wird aus den Bildern vorgeschlagen und kann vor dem Einreichen geändert werden. JPEG, PNG, WebP und HEIC, maximal 40 MB je Bild, 300 Bilder pro Einreichung und fünf offene Einreichungen pro Person.</p><h2>Neue Fotos einreichen</h2><form data-photo-upload-form action="${base}photos/sets/create" method="post"><input type="hidden" name="csrf" value="${csrf}"><p><label>Titel<input name="title" required maxlength="200" placeholder="z. B. Weihnachtsfeier 2026"></label></p><p><label>Datum der Aufnahmen (optional)<input name="eventDate" type="date"></label></p><p><label>Bilderordner<input type="file" name="folder" webkitdirectory multiple accept="image/jpeg,image/png,image/webp,image/heic,.heic,.heif"></label></p><p><label>Oder einzelne Bilder<input type="file" name="files" multiple accept="image/jpeg,image/png,image/webp,image/heic,.heic,.heif"></label></p><button type="submit">Einreichung anlegen und Bilder hochladen</button>${uploadProgress}<p data-photo-upload-status role="status" aria-live="polite"></p></form><h2>Meine Fotoeinreichungen</h2>${sets.length ? `<ul class="photo-set-list">${sets.map((set) => `<li><a href="${setUrl(set.id)}">${esc(set.title)}</a> · ${Number(set.photoCount)} Bilder · ${set.status === 'open' ? 'noch nicht eingereicht' : set.status === 'submitted' ? 'bei der Redaktion' : 'gesichtet'}</li>`).join('')}</ul>` : '<p>Noch keine Fotoeinreichungen.</p>'}</div>`, 'photos.js', true, submissionsAvailable, true);

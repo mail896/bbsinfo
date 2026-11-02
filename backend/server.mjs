@@ -495,12 +495,12 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             const query = (url.searchParams.get('q') || '').trim();
             if (query.length < 2 || query.length > 100) return send(200, searchPage(query.slice(0, 100), { updates: [], issues: [] }, []));
             if (archiveStore && !validArchiveQuery(query)) return send(400, page('Suche eingrenzen', '<section><h1>Suche eingrenzen</h1><p>Bitte höchstens sechs Suchwörter eingeben.</p></section>'));
-            const [web, archive] = await Promise.all([cmsStore.searchPublished(query), archiveStore ? Promise.resolve(archiveStore.search(query)) : Promise.resolve([])]);
+            const [web, archive, albums] = await Promise.all([cmsStore.searchPublished(query), archiveStore ? Promise.resolve(archiveStore.search(query)) : Promise.resolve([]), photosAvailable ? cmsStore.searchPhotoAlbums(query) : Promise.resolve([])]);
             if (req.method === 'GET') {
               await cmsStore.recordAudit(identity.uuid, 'search.perform', 'search');
               await cmsStore.recordSearch(identity.uuid, query, 'all');
             }
-            return send(200, searchPage(query, web, archive));
+            return send(200, searchPage(query, { ...web, albums }, archive));
           }
           if (path === `${base}issues/`) {
             const pageNumber = contentPageNumber(url, 'page');

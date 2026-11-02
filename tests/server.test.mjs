@@ -70,7 +70,7 @@ test('Suchstatistik nennt Personen ohne UUID und escaped Suchtext', () => {
   assert.doesNotMatch(html, /<Personalrat>|Lea <Test>/);
 });
 
-async function setup(archiveStore = null, cmsStore = null, accountInfo = validInfo, submissionRoot = null, mailConfig = null, sendIssue = undefined, refreshOverride = null, editorImageRoot = null, sendDigest = undefined) {
+async function setup(archiveStore = null, cmsStore = null, accountInfo = validInfo, submissionRoot = null, mailConfig = null, sendIssue = undefined, refreshOverride = null, editorImageRoot = null, sendDigest = undefined, photoRoot = null) {
   let authorized = true;
   const calls = { begin: 0, complete: 0, refresh: 0 };
   const auth = {
@@ -78,7 +78,7 @@ async function setup(archiveStore = null, cmsStore = null, accountInfo = validIn
     async complete() { calls.complete++; return { subject: 'subject', info: accountInfo, accessToken: 'token', expires: Date.now() + 300000 }; },
     async refresh() { calls.refresh++; return refreshOverride ? refreshOverride() : authorized ? accountInfo : { ...accountInfo, 'iserv:groups': [] }; },
   };
-  const app = createApp({ settings, getProvider: async () => auth, archiveStore, cmsStore, submissionRoot, editorImageRoot, mailConfig, sendIssue, sendDigest });
+  const app = createApp({ settings, getProvider: async () => auth, archiveStore, cmsStore, submissionRoot, editorImageRoot, photoRoot, mailConfig, sendIssue, sendDigest });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.address().port}`;
   return { app, base, calls, revoke() { authorized = false; } };
@@ -866,6 +866,26 @@ test('Gemeinsame Suche zeigt Treffer aus dem historischen PDF-Index', async () =
     assert.match(body, /Historische PDFs/);
     assert.match(body, /archive\/92\.pdf/);
     assert.match(body, /Name im Archiv/);
+  } finally { await new Promise((resolve) => fixture.app.close(resolve)); }
+});
+
+test('Gemeinsame Suche zeigt freigegebene Fotoalben aus der Fotolibrary', async () => {
+  const cms = fakeCmsStore();
+  let searched;
+  cms.searchPhotoAlbums = async (query) => {
+    searched = query;
+    return [{ id: 7, title: 'Rohbau', eventDate: '2006-03-23', photoCount: 30 }];
+  };
+  const fixture = await setup(null, cms, validInfo, null, null, undefined, null, null, undefined, '/tmp');
+  try {
+    const sid = await login(fixture);
+    const search = await request(fixture.base, '/bbsinfo/search/?q=Rohbau', { headers: { cookie: sid } });
+    assert.equal(search.status, 200);
+    assert.equal(searched, 'Rohbau');
+    const body = await search.text();
+    assert.match(body, /Fotoalben/);
+    assert.match(body, /href="\/bbsinfo\/photos\/albums\/7">Rohbau<\/a>/);
+    assert.doesNotMatch(body, /Keine Treffer gefunden/);
   } finally { await new Promise((resolve) => fixture.app.close(resolve)); }
 });
 

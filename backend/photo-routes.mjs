@@ -40,9 +40,15 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
   if (get) {
     if (path === `${base}photos/`) {
       const query = url.searchParams.get('q') || '';
+      const year = url.searchParams.get('year') || '';
+      const page = url.searchParams.get('page') || '1';
       if (query.length > 100 || /[\u0000-\u001f\u007f]/u.test(query)) return bad(send);
+      if (year !== '' && year !== 'undated' && !/^[1-9]\d{3}$/.test(year)) return bad(send);
+      if (!/^[1-9][0-9]{0,3}$/.test(page)) return bad(send);
+      const [listing, years] = await Promise.all([store.listPhotoAlbumPage(query, year, Number(page)), store.listPhotoAlbumYears()]);
+      if (Number(page) > listing.pageCount) return missing(send);
       if (method === 'GET') await store.recordAudit(identity.uuid, query ? 'photo_album.search' : 'page.view', query ? 'photo_album' : 'page', query ? null : 'photos');
-      return send(200, photoIndexPage(await store.listPhotoAlbums(query), query));
+      return send(200, photoIndexPage(listing, query, year, years));
     }
     if (path === `${base}photos/mine`) {
       if (method === 'GET') await store.recordAudit(identity.uuid, 'page.view', 'page', 'photos.mine');

@@ -7,12 +7,14 @@ function fixture(path, method = 'GET', identity = { uuid, editor: false, auditOw
   const result = { status: null, html: '', audits: [], deleted: false };
   const store = {
     async getPhotoAlbum() { return { id: 7, title: 'Schulfest', eventDate: '2026-10-01', description: '', photos: [] }; },
+    async listPhotoAlbumPage() { return { items: [], page: 1, pageCount: 1, total: 0 }; },
+    async listPhotoAlbumYears() { return [{ year: 2026 }]; },
     async recordAudit(...args) { result.audits.push(args); },
     async deletePhotoAlbum() { result.deleted = true; return true; },
   };
   const options = {
     req: { method, headers: { origin: 'https://apps.school.example' } },
-    res: {}, path, url: new URL(path, 'https://apps.school.example'), identity, csrf: 'valid', cmsStore: store,
+    res: {}, path: new URL(path, 'https://apps.school.example').pathname, url: new URL(path, 'https://apps.school.example'), identity, csrf: 'valid', cmsStore: store,
     photoRoot: '/tmp', editorImageRoot: '/tmp', origin: 'https://apps.school.example',
     send(status, html) { result.status = status; result.html = html; },
     redirect() { throw new Error('unexpected redirect'); },
@@ -30,6 +32,25 @@ test('nur Redaktion löscht Alben; nur Audit-Verantwortlicher liest Kommentarver
   const history = fixture('/bbsinfo/photos/comments/3/history');
   await handlePhotoRoute(history.options);
   assert.equal(history.result.status, 403);
+});
+
+test('Albumjahr und Seite werden geprüft und die Suche bleibt erhalten', async () => {
+  const invalid = fixture('/bbsinfo/photos/?year=2006%20OR%201%3D1');
+  await handlePhotoRoute(invalid.options);
+  assert.equal(invalid.result.status, 400);
+  const requested = fixture('/bbsinfo/photos/?q=Rohbau&year=2006&page=2');
+  let args;
+  requested.options.cmsStore.listPhotoAlbumPage = async (...values) => {
+    args = values;
+    return { items: [{ id: 8, title: 'Rohbau', eventDate: '2006-03-23', photoCount: 1, coverId: 9 }], page: 2, pageCount: 2, total: 25 };
+  };
+  requested.options.cmsStore.listPhotoAlbumYears = async () => [{ year: 2006 }];
+  await handlePhotoRoute(requested.options);
+  assert.equal(requested.result.status, 200);
+  assert.deepEqual(args, ['Rohbau', '2006', 2]);
+  assert.match(requested.result.html, /aria-current="page">2006/);
+  assert.match(requested.result.html, /href="\/bbsinfo\/photos\/albums\/8"/);
+  assert.deepEqual(requested.result.audits, [[uuid, 'photo_album.search', 'photo_album', null]]);
 });
 
 test('Album-Besuch wird einmal auditiert', async () => {

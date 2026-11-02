@@ -92,6 +92,35 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
       const term = note(query, 100);
       return pool.query("SELECT b.id, b.title, DATE_FORMAT(b.event_date, '%Y-%m-%d') AS eventDate, b.description, COUNT(a.id) AS photoCount, COALESCE(MAX(CASE WHEN a.id = b.cover_photo_id THEN a.id END), MIN(a.id)) AS coverId FROM photo_albums b JOIN photo_assets a ON a.album_id = b.id AND a.status = 'published' WHERE b.deleted_at IS NULL AND LOCATE(LOWER(?), LOWER(b.title)) > 0 GROUP BY b.id ORDER BY b.event_date DESC, b.id DESC LIMIT 200", [term]);
     },
+    async listPhotoAlbumYears() {
+      return pool.query("SELECT YEAR(b.event_date) AS year, COUNT(*) AS albumCount FROM photo_albums b WHERE b.deleted_at IS NULL AND EXISTS (SELECT 1 FROM photo_assets a WHERE a.album_id = b.id AND a.status = 'published') GROUP BY YEAR(b.event_date) ORDER BY year DESC");
+    },
+    async listPhotoAlbumPage(query = '', year = '', page = 1) {
+      const term = note(query, 100);
+      if (year !== '' && year !== 'undated' && !/^[1-9]\d{3}$/.test(year)) throw new Error('Ungültiges Albumjahr.');
+      if (!Number.isSafeInteger(page) || page < 1 || page > 9999) throw new Error('Ungültige Albumseite.');
+      const clauses = ['b.deleted_at IS NULL'];
+      const params = [];
+      if (term) {
+        clauses.push('(LOCATE(LOWER(?), LOWER(b.title)) > 0 OR LOCATE(LOWER(?), LOWER(b.description)) > 0)');
+        params.push(term, term);
+      }
+      if (year === 'undated') clauses.push('b.event_date IS NULL');
+      else if (year) {
+        clauses.push('b.event_date BETWEEN ? AND ?');
+        params.push(`${year}-01-01`, `${year}-12-31`);
+      }
+      const where = clauses.join(' AND ');
+      const countRows = await pool.query(`SELECT COUNT(*) AS total FROM photo_albums b WHERE ${where} AND EXISTS (SELECT 1 FROM photo_assets a WHERE a.album_id = b.id AND a.status = 'published')`, params);
+      const total = Number(countRows[0].total);
+      const pageCount = Math.max(1, Math.ceil(total / 24));
+      if (page > pageCount) return { items: [], page, pageCount, total };
+      const items = await pool.query(`SELECT b.id, b.title, DATE_FORMAT(b.event_date, '%Y-%m-%d') AS eventDate, b.description, COUNT(a.id) AS photoCount, COALESCE(MAX(CASE WHEN a.id = b.cover_photo_id THEN a.id END), MIN(a.id)) AS coverId FROM photo_albums b JOIN photo_assets a ON a.album_id = b.id AND a.status = 'published' WHERE ${where} GROUP BY b.id ORDER BY b.event_date DESC, b.id DESC LIMIT ? OFFSET ?`, [...params, 24, (page - 1) * 24]);
+      return { items, page, pageCount, total };
+    },
+    async searchPhotoAlbums(query) {
+      return (await this.listPhotoAlbumPage(query)).items;
+    },
     async listPublishedPhotos(query = '') {
       const term = note(query, 100);
       return pool.query(`${photoSelect} JOIN photo_albums b ON b.id = a.album_id WHERE a.status = 'published' AND b.deleted_at IS NULL AND (LOCATE(LOWER(?), LOWER(b.title)) > 0 OR LOCATE(LOWER(?), LOWER(a.original_name)) > 0) ORDER BY a.published_at DESC, a.id DESC LIMIT 100`, [term, term]);

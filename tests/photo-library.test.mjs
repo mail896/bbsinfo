@@ -8,6 +8,7 @@ import { Readable } from 'node:stream';
 import { runInNewContext } from 'node:vm';
 import { receivePhoto, photoFile, removePhotoFiles } from '../backend/photo-files.mjs';
 import { photoAlbumPage, photoDetailPage, photoIndexPage, photoMinePage, photoSetPage } from '../backend/photo-pages.mjs';
+import { searchPage } from '../backend/web-pages.mjs';
 import { photoStoreMethods } from '../backend/photo-store.mjs';
 
 const python = '/usr/bin/python3';
@@ -70,7 +71,7 @@ test('Uploadstatus hat Fortschrittsanzeige und Redaktion sieht jedes Bild nur ei
   assert.match(mine, /data-photo-upload-progress hidden/);
   assert.match(mine, /href="\/bbsinfo\/photos\/mine" aria-current="page">Meine Fotos<\/a>/);
   assert.match(mine, /href="\/bbsinfo\/contributions\/">Meine Beiträge<\/a>/);
-  assert.doesNotMatch(photoIndexPage([], ''), /Bilder einreichen|Einreichungen sichten/);
+  assert.doesNotMatch(photoIndexPage({ items: [], page: 1, pageCount: 1, total: 0 }, ''), /Bilder einreichen|Einreichungen sichten/);
   const photos = [
     { id: 11, status: 'private', originalName: 'eins.jpg', uploaderName: 'Test Person', capturedDate: null },
     { id: 12, status: 'private', originalName: 'zwei.jpg', uploaderName: 'Test Person', capturedDate: null },
@@ -82,6 +83,36 @@ test('Uploadstatus hat Fortschrittsanzeige und Redaktion sieht jedes Bild nur ei
   assert.match(review, /Bilder für die Library auswählen/);
   const owner = photoSetPage(set, 'csrf', false, true);
   assert.doesNotMatch(owner, /<span>Test Person<\/span>/);
+});
+
+test('Fotolibrary bietet Jahre und Albumseiten; globale Suche verlinkt nur freigegebene Alben', async () => {
+  const row = { id: 4, title: 'Rohbau & Umbau', eventDate: '2006-03-23', photoCount: 30, coverId: 12 };
+  const html = photoIndexPage({ items: [row], page: 2, pageCount: 3, total: 25 }, 'Rohbau', '2006', [{ year: 2026 }, { year: 2006 }, { year: null }]);
+  assert.match(html, /Albumjahr wählen/);
+  assert.match(html, /year=2006" aria-current="page">2006/);
+  assert.match(html, /Ohne Datum/);
+  assert.match(html, /q=Rohbau&amp;year=2006&amp;page=3/);
+  assert.match(html, /Rohbau &amp; Umbau/);
+  const results = searchPage('Rohbau', { updates: [], issues: [], albums: [row] }, []);
+  assert.match(results, /Fotoalben/);
+  assert.match(results, /href="\/bbsinfo\/photos\/albums\/4"/);
+  assert.doesNotMatch(results, /Keine Treffer gefunden/);
+  const calls = [];
+  const pool = { async query(sql, values = []) {
+    calls.push({ sql, values });
+    if (sql.includes('COUNT(*) AS total')) return [{ total: 25 }];
+    if (sql.includes('GROUP BY b.id')) return [row];
+    throw new Error(`Unerwartete Abfrage: ${sql}`);
+  } };
+  const store = photoStoreMethods(pool, async () => {}, async () => {}, async () => {});
+  const listing = await store.listPhotoAlbumPage('Rohbau', '2006', 2);
+  assert.equal(listing.pageCount, 2);
+  assert.deepEqual(listing.items, [row]);
+  assert.deepEqual(calls[0].values, ['Rohbau', 'Rohbau', '2006-01-01', '2006-12-31']);
+  assert.deepEqual(calls[1].values, ['Rohbau', 'Rohbau', '2006-01-01', '2006-12-31', 24, 24]);
+  assert.match(calls[0].sql, /a\.status = 'published'/);
+  assert.match(calls[1].sql, /a\.status = 'published'/);
+  await assert.rejects(store.listPhotoAlbumPage('', '2006 OR 1=1'), /Ungültiges Albumjahr/);
 });
 
 test('Albumtitelbild ist redaktionell wählbar und muss zu einem veröffentlichten Bild des Albums gehören', async () => {
