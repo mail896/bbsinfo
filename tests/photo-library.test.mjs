@@ -158,7 +158,7 @@ test('Albumwahl zeigt nur die passenden Angaben und Fotoaktionen teilen einen Fa
 
   const start = home({ name: 'Redaktion', editor: true, auditOwner: false }, 'csrf', true, true, true, undefined, null, true);
   assert.match(start, /class="photo-action" href="\/bbsinfo\/photos\/">Fotolibrary/);
-  assert.match(start, /class="photo-action" href="\/bbsinfo\/photos\/review">Fotoeinreichungen sichten/);
+  assert.match(start, /class="photo-action" href="\/bbsinfo\/photos\/review">Fotos bearbeiten/);
 });
 
 test('Fotolibrary bietet Jahre und Albumseiten; globale Suche verlinkt nur freigegebene Alben', async () => {

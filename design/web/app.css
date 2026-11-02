@@ -325,6 +325,18 @@ li {
   background: light-dark(#dceee0, #355c42);
 }
 
+.home-nav .admin-action {
+  margin-left: auto;
+  background: var(--admin-action);
+  border-color: light-dark(#343d47, #596c7d);
+  color: #fff;
+}
+
+.home-nav .admin-action:hover,
+.home-nav .admin-action:focus-visible {
+  background: light-dark(#303943, #52677a);
+}
+
 .personal-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -470,29 +482,10 @@ li {
   border-color: var(--line);
 }
 
-.work-links .admin-action {
-  background: var(--admin-action);
-  border-color: #343d47;
-  color: #fff;
-}
-
-.work-links .admin-action:hover,
-.work-links .admin-action:focus-visible {
-  background: #303943;
-}
-
 .work-links {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.work-links > div {
-  display: flex;
-  gap: 10px;
   flex-wrap: wrap;
-  max-width: 100%;
+  gap: 10px;
 }
 
 .work-links a {
@@ -804,6 +797,10 @@ li {
   .home-nav a {
     flex: 1 1 auto;
     text-align: center;
+  }
+  .home-nav .admin-action {
+    margin-left: 0;
+    flex-basis: 100%;
   }
   .landing-shell {
     grid-template-columns: 1fr;
@@ -1458,7 +1455,12 @@ meter::-moz-meter-bar {
   .feedback-toast { transition: none; }
 }
 
+.management-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.management-tabs a { padding: 9px 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--link); font-weight: 650; text-decoration: none; }
+.management-tabs a:hover, .management-tabs a:focus-visible { background: var(--surface-raised); }
+.management-tabs a[aria-current="page"] { background: var(--admin-action); border-color: light-dark(#343d47, #596c7d); color: #fff; }
 .settings-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 20px 0 0; padding: 0 0 1px; border-bottom: 1px solid var(--line); }
+.settings-page .management-tabs + .settings-tabs { margin-top: 0; }
 .settings-tabs a { flex: 0 0 auto; padding: 11px 16px; border: 1px solid transparent; border-radius: 9px 9px 0 0; color: var(--link); font-weight: 650; text-decoration: none; }
 .settings-tabs a:hover, .settings-tabs a:focus-visible { background: var(--surface-raised); }
 .settings-tabs a[aria-current="page"] { background: var(--issue-tint); border-color: var(--issue-border); border-bottom-color: var(--issue-tint); color: var(--ink); }

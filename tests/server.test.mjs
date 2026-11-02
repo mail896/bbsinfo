@@ -8,7 +8,7 @@ import { createApp, currentSchoolYear, readSettings } from '../backend/server.mj
 import { issueNotice, digestNotice, readMailConfig, sendIssueNotice, sendDigestTest, TEST_RECIPIENT } from '../backend/mail.mjs';
 import { renderIssuePdf } from '../backend/issue-pdf.mjs';
 import { defaultAppSettings } from '../backend/app-settings.mjs';
-import { auditPage, home, issuesPage, notificationsPage, statsPage } from '../backend/web-pages.mjs';
+import { auditPage, home, issuesPage, notificationsPage, settingsPage, statsPage } from '../backend/web-pages.mjs';
 
 const uuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const settings = { clientId: 'test', clientSecret: 'test', auditOwnerUuid: uuid, readerGroupName: 'Kollegium' };
@@ -40,11 +40,33 @@ test('Startseite kennzeichnet gekürzte Updates und führt zum vollständigen Be
   assert.equal([...html.matchAll(/Weiterlesen →/g)].length, 1);
 });
 
-test('Arbeitsbereich trennt Redaktion und Verwaltung; persönliche Einstellungen bieten drei Farbmodi', () => {
-  const dashboard = home({ name: 'Redaktion', editor: true, auditOwner: true }, 'csrf', true, true, true, undefined, null, true);
-  assert.match(dashboard, /class="work-links-main">.*Beiträge bearbeiten.*Ausgaben bearbeiten.*Fotoeinreichungen sichten.*<\/div><div class="work-links-admin">.*Einstellungen.*Audit-Log.*Nutzungsstatistik.*<\/div>/);
-  const settings = notificationsPage(null, 'csrf', true, false, true, true);
-  assert.match(settings, /data-theme-choice><option value="system">System<\/option><option value="light">Hell<\/option><option value="dark">Dunkel<\/option>/);
+test('Settings steht oben rechts; Verwaltungs-Tabs folgen den Rollen', () => {
+  const ownerHome = home({ name: 'Administration', editor: true, auditOwner: true }, 'csrf', true, true, true, undefined, null, true);
+  assert.match(ownerHome, /class="personal-action"[^>]*>Mein BBS Info<\/a><a class="admin-action"[^>]*>⚙ Settings<\/a><\/nav>/);
+  assert.match(ownerHome, /<h2>Redaktion<\/h2><div class="work-links">.*Beiträge bearbeiten.*Fotos bearbeiten.*Ausgaben bearbeiten.*<\/div><\/section>/);
+  assert.doesNotMatch(ownerHome.match(/<section class="work-panel">.*?<\/section>/)?.[0] || '', /Einstellungen|Audit-Log|Nutzungsstatistik/);
+  const readerHome = home({ name: 'Kollegium', editor: false, auditOwner: false }, 'csrf', true, true, true);
+  assert.doesNotMatch(readerHome, /⚙ Settings|class="work-panel"/);
+  const editorHome = home({ name: 'Redaktion', editor: true, auditOwner: false }, 'csrf', true, true, true);
+  assert.match(editorHome, /href="\/bbsinfo\/editor\/settings\/">⚙ Settings<\/a>/);
+  const ownerOnlyHome = home({ name: 'Administration', editor: false, auditOwner: true }, 'csrf', true, true, true);
+  assert.match(ownerOnlyHome, /href="\/bbsinfo\/audit\/">⚙ Settings<\/a>/);
+  assert.doesNotMatch(ownerOnlyHome, /class="work-panel"/);
+
+  const editorialSettings = settingsPage(defaultAppSettings, 'csrf');
+  assert.match(editorialSettings, /aria-label="Verwaltung"><a href="\/bbsinfo\/editor\/settings\/" aria-current="page">Einstellungen<\/a><\/nav>/);
+  assert.doesNotMatch(editorialSettings, /href="\/bbsinfo\/audit\/"|href="\/bbsinfo\/stats\/"/);
+  const ownerSettings = settingsPage(defaultAppSettings, 'csrf', 'issues', [], true);
+  assert.match(ownerSettings, /aria-label="Verwaltung">.*Einstellungen.*Audit-Log.*Nutzungsstatistik.*<\/nav>/);
+  const audit = auditPage({ events: [], page: 1, pageCount: 1 }, {}, null, true);
+  const stats = statsPage({ days: 30, daily: [], topContent: [], activeUsers: 0, subscriptions: 0 }, 1, null, true);
+  assert.match(audit, /href="\/bbsinfo\/audit\/" aria-current="page">Audit-Log<\/a>/);
+  assert.match(stats, /href="\/bbsinfo\/stats\/" aria-current="page">Nutzungsstatistik<\/a>/);
+  assert.match(audit, /href="\/bbsinfo\/editor\/settings\/">Einstellungen<\/a>/);
+  assert.match(stats, /href="\/bbsinfo\/editor\/settings\/">Einstellungen<\/a>/);
+
+  const personalSettings = notificationsPage(null, 'csrf', true, false, true, true);
+  assert.match(personalSettings, /data-theme-choice><option value="system">System<\/option><option value="light">Hell<\/option><option value="dark">Dunkel<\/option>/);
 });
 
 test('Lange Seitenlisten zeigen Anfang, aktuelle Umgebung und Ende mit Auslassung', () => {
@@ -1235,6 +1257,7 @@ test('Nur Marc verwaltet zusätzliche Redakteure; Rechte werden nach IServ-Anmel
     const ownerSid = await login(owner);
     const colleagueSid = await login(colleague);
     const ownerHtml = await (await request(owner.base, '/bbsinfo/editor/settings/?tab=editors', { headers: { cookie: ownerSid } })).text();
+    assert.match(ownerHtml, /aria-label="Verwaltung">.*Einstellungen.*Audit-Log.*Nutzungsstatistik.*<\/nav>/);
     const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(ownerHtml)[1];
     const headers = { cookie: ownerSid, origin: 'https://apps.school.example', 'content-type': 'application/x-www-form-urlencoded' };
     assert.match(ownerHtml, /Redakteur hinzufügen/);
@@ -1244,7 +1267,9 @@ test('Nur Marc verwaltet zusätzliche Redakteure; Rechte werden nach IServ-Anmel
     assert.match(await (await request(owner.base, '/bbsinfo/editor/settings/?tab=editors', { headers: { cookie: ownerSid } })).text(), /melanie@school\.example/);
     assert.equal((await request(colleague.base, '/bbsinfo/editor/', { headers: { cookie: colleagueSid } })).status, 200);
     assert.equal((await request(colleague.base, '/bbsinfo/editor/settings/?tab=editors', { headers: { cookie: colleagueSid } })).status, 403);
-    assert.doesNotMatch(await (await request(colleague.base, '/bbsinfo/editor/settings/', { headers: { cookie: colleagueSid } })).text(), /tab=editors/);
+    const colleagueSettings = await (await request(colleague.base, '/bbsinfo/editor/settings/', { headers: { cookie: colleagueSid } })).text();
+    assert.doesNotMatch(colleagueSettings, /tab=editors|href="\/bbsinfo\/audit\/"|href="\/bbsinfo\/stats\/"/);
+    assert.match(colleagueSettings, /aria-label="Verwaltung"><a href="\/bbsinfo\/editor\/settings\/" aria-current="page">Einstellungen<\/a><\/nav>/);
     assert.equal((await request(colleague.base, '/bbsinfo/editor/settings/editors/add', { method: 'POST', headers: { ...headers, cookie: colleagueSid }, body: new URLSearchParams({ csrf, email: 'other@school.example' }) })).status, 403);
     assert.equal((await request(colleague.base, '/bbsinfo/audit/', { headers: { cookie: colleagueSid } })).status, 403);
     assert.equal((await request(owner.base, '/bbsinfo/editor/settings/editors/remove', { method: 'POST', headers, body: new URLSearchParams({ csrf, email: editorInfo.email, confirm: editorInfo.email }) })).status, 303);

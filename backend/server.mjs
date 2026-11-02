@@ -667,7 +667,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'audit');
             const listing = await cmsStore.listAuditPage(pageNumber, filters, through);
             if (pageNumber > listing.pageCount) return send(404, page('Seite nicht gefunden', '<section><h1>Seite nicht gefunden</h1></section>'));
-            return send(200, auditPage(listing, filters, await readAuditHealth()));
+            return send(200, auditPage(listing, filters, await readAuditHealth(), identity.editor));
           }
           if (path === `${base}audit/export.csv`) {
             if (!identity.auditOwner) return denyProtectedAccess(identity, 'audit');
@@ -690,7 +690,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'stats');
             const report = await cmsStore.listUsageStats(days);
             if (pageNumber > Math.max(1, Math.ceil(new Set(report.daily.map((row) => row.day)).size / 14))) return send(404, page('Seite nicht gefunden', '<section><h1>Statistikseite nicht gefunden</h1></section>'));
-            return send(200, statsPage(report, pageNumber, await readAuditHealth()));
+            return send(200, statsPage(report, pageNumber, await readAuditHealth(), identity.editor));
           }
           if (cmsPost) {
             if (![`${base}notifications/save`, `${base}contributions/save`, `${base}contributions/delete`, `${base}trash/restore`, `${base}editor/images/upload`, `${base}submissions/upload`, `${base}submissions/replace`, `${base}submissions/delete`].includes(path) && !identity.editor) return denyProtectedAccess(identity, path.startsWith(`${base}editor/issues/`) ? 'editor.issues' : 'editor');
