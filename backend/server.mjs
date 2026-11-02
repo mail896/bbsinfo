@@ -779,7 +779,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               let purged;
               try { purged = await cmsStore.purgeTrashedIssue(identity.uuid, id); }
               catch (error) {
-                if (error.message === 'Eine Ausgabe mit begonnenem Mailversand kann nicht endgültig gelöscht werden.') return send(409, page('Nicht löschbar', '<section><h1>Für diese Ausgabe wurde ein Mailversand begonnen. Sie kann nicht endgültig gelöscht werden.</h1></section>'));
+                if (error.message === 'Eine Ausgabe mit begonnenem regulärem Mailversand kann nicht endgültig gelöscht werden.') return send(409, page('Nicht löschbar', '<section><h1>Für diese Ausgabe wurde der reguläre Mailversand begonnen. Sie kann nicht endgültig gelöscht werden.</h1></section>'));
                 throw error;
               }
               if (!purged) return send(404, page('Nicht gefunden', '<section><h1>Diese Ausgabe ist nicht mehr im Papierkorb.</h1></section>'));
@@ -904,7 +904,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
               if (!/^[1-9][0-9]{0,9}$/.test(form.get('number') || '') || form.get('confirm') !== form.get('number')) return send(400, page('Bestätigung fehlt', '<section><h1>Bitte das Löschen bestätigen.</h1></section>'));
               let deleted;
               try { deleted = await cmsStore.deleteIssue(identity.uuid, form.get('number')); }
-              catch (error) { if (/begonnenem Mailversand/.test(error.message)) return send(409, page('Löschen nicht möglich', '<section><h1>Für diese Ausgabe wurde der Mailversand bereits begonnen. Ihre Nummer darf nicht erneut vergeben werden.</h1></section>')); throw error; }
+              catch (error) { if (/begonnenem regulärem Mailversand/.test(error.message)) return send(409, page('Löschen nicht möglich', '<section><h1>Für diese Ausgabe wurde der reguläre Mailversand bereits begonnen. Ihre Nummer darf nicht erneut vergeben werden.</h1></section>')); throw error; }
               if (!deleted) return send(404, page('Nicht gefunden', '<section><h1>Ausgabe nicht gefunden.</h1></section>'));
               return redirect(`${base}editor/issues/`, 'Ausgabe in den Papierkorb verschoben.');
             }

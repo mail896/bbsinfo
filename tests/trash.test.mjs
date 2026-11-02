@@ -171,7 +171,7 @@ test('Begonnener Mailversand und wiederhergestellte Ausgabe blockieren die endgÃ
     if (sql.startsWith('SELECT status FROM issue_mail_delivery')) return [{ status: 'sending' }];
     return [];
   });
-  await assert.rejects(createCmsStore(pool).purgeTrashedIssue(actor, 7), /begonnenem Mailversand/);
+  await assert.rejects(createCmsStore(pool).purgeTrashedIssue(actor, 7), /begonnenem regulÃ¤rem Mailversand/);
   assert.ok(calls.includes('rollback'));
   assert.ok(!calls.some((call) => call.sql?.startsWith('DELETE FROM issues')));
   const absent = transactionStore(() => []);

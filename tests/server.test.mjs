@@ -159,7 +159,7 @@ function fakeCmsStore() {
       const index = trash.issues.findIndex((row) => row.id === Number(id));
       if (index < 0) return false;
       const row = trash.issues[index];
-      if (issueMail.has(row.number)) throw new Error('Eine Ausgabe mit begonnenem Mailversand kann nicht endgültig gelöscht werden.');
+      if (issueMail.has(row.number)) throw new Error('Eine Ausgabe mit begonnenem regulärem Mailversand kann nicht endgültig gelöscht werden.');
       trash.issues.splice(index, 1);
       events.push({ actor, action: row.status === 'draft' ? 'issue.draft_purge' : 'issue.purge', type: 'issue', id: row.number || row.id, title: row.title });
       return true;

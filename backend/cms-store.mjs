@@ -193,7 +193,7 @@ async function releaseRemovedContributions(conn, ids) {
 
 async function purgeIssue(conn, id, row, actor = null) {
   const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [id]);
-  if (delivery.length) throw new Error('Eine Ausgabe mit begonnenem Mailversand kann nicht endgültig gelöscht werden.');
+  if (delivery.length) throw new Error('Eine Ausgabe mit begonnenem regulärem Mailversand kann nicht endgültig gelöscht werden.');
   await conn.query('DELETE FROM issue_submissions WHERE issue_id = ?', [id]);
   await conn.query('DELETE FROM issue_updates WHERE issue_id = ?', [id]);
   const contributions = await conn.query('SELECT contribution_id AS id FROM issue_contributions WHERE issue_id = ? FOR UPDATE', [id]);
@@ -871,7 +871,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
         if (rows.length !== 1) return false;
         const id = rows[0].id;
         const delivery = await conn.query('SELECT status FROM issue_mail_delivery WHERE issue_id = ?', [id]);
-        if (delivery.length) throw new Error('Eine Ausgabe mit begonnenem Mailversand kann nicht gelöscht werden.');
+        if (delivery.length) throw new Error('Eine Ausgabe mit begonnenem regulärem Mailversand kann nicht gelöscht werden.');
         await conn.query('UPDATE issues SET deleted_at = UTC_TIMESTAMP(6), deleted_by = ? WHERE id = ?', [uuid, id]);
         await audit(conn, uuid, 'issue.delete', 'issue', n, rows[0].title);
         return true;
