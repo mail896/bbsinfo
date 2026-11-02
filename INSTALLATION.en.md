@@ -27,6 +27,8 @@ For an existing 1.0 installation, make and restore-test a private full backup be
 
 For an existing 1.1 installation, make and restore-test a private full backup before switching to 1.2, then apply `db/migrations/2026-11-02-photo-library.sql` once. The photo directory needs mode `0700` and service-account ownership. Rejected originals are removed after review; deleted published photos can be recovered by an operator for seven days.
 
+To upgrade from 1.2.0 to 1.2.1, also make and restore-test a private database backup. Apply `db/migrations/2026-11-02-photo-album-cover.sql` once before starting the new code. It adds the selectable cover photo ID; existing albums continue to show their first published image until an editor chooses another.
+
 ## Email
 
 Email is optional. Store SMTP settings in a private JSON file and pass it through `BBSINFO_MAIL_CONFIG`. `backend/mail.mjs` and `backend/smtp_sender.py` deliberately restrict sender and recipients to the sample environment; adapt these constants carefully while retaining the safety tests. **Staff-wide email remains disabled** until both `deliveryEnabled: true` in private configuration and `BBSINFO_COLLEGIUM_SEND_ENABLED=1` are explicitly set after local approval. Personal mail also requires the read-only IDM account and a user's own subscription.

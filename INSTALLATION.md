@@ -25,6 +25,8 @@ Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installat
 
 Bei einer bestehenden Installation von Version 1.1 vor dem Wechsel auf 1.2 eine private Vollsicherung samt Rücksicherungstest durchführen und `db/migrations/2026-11-02-photo-library.sql` einmalig anwenden. Das private Fotoverzeichnis muss dem Dienstkonto gehören und `0700` gesetzt sein. Abgelehnte Fotooriginale werden nach der Sichtung entfernt; veröffentlichte gelöschte Fotos bleiben sieben Tage verdeckt wiederherstellbar.
 
+Für ein Upgrade von 1.2.0 auf 1.2.1 die produktive Datenbank ebenfalls privat sichern und die Rücksicherung prüfen. Danach `db/migrations/2026-11-02-photo-album-cover.sql` einmalig anwenden, bevor der neue Code gestartet wird. Diese Migration ergänzt die auswählbare Titelbild-ID; vorhandene Alben behalten zunächst ihr bisheriges erstes veröffentlichtes Bild als Vorschau.
+
 Bei einer bestehenden Installation von Version 1.0 vor dem Wechsel auf 1.1 eine private Vollsicherung samt Rücksicherungstest durchführen und `db/migrations/2026-10-29-content-trash.sql` einmalig anwenden. Der Papierkorb bereinigt abgelaufene Einträge beim Dienststart und täglich; dazu muss das private Einreichungsverzeichnis konfiguriert sein.
 
 ## Mail

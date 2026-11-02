@@ -90,7 +90,7 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
     },
     async listPhotoAlbums(query = '') {
       const term = note(query, 100);
-      return pool.query("SELECT b.id, b.title, DATE_FORMAT(b.event_date, '%Y-%m-%d') AS eventDate, b.description, COUNT(a.id) AS photoCount, MIN(a.id) AS coverId FROM photo_albums b JOIN photo_assets a ON a.album_id = b.id AND a.status = 'published' WHERE b.deleted_at IS NULL AND LOCATE(LOWER(?), LOWER(b.title)) > 0 GROUP BY b.id ORDER BY b.event_date DESC, b.id DESC LIMIT 200", [term]);
+      return pool.query("SELECT b.id, b.title, DATE_FORMAT(b.event_date, '%Y-%m-%d') AS eventDate, b.description, COUNT(a.id) AS photoCount, COALESCE(MAX(CASE WHEN a.id = b.cover_photo_id THEN a.id END), MIN(a.id)) AS coverId FROM photo_albums b JOIN photo_assets a ON a.album_id = b.id AND a.status = 'published' WHERE b.deleted_at IS NULL AND LOCATE(LOWER(?), LOWER(b.title)) > 0 GROUP BY b.id ORDER BY b.event_date DESC, b.id DESC LIMIT 200", [term]);
     },
     async listPublishedPhotos(query = '') {
       const term = note(query, 100);
@@ -110,7 +110,7 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
     },
     async getPhotoAlbum(albumId) {
       const number = id(albumId);
-      const albums = await pool.query("SELECT id, title, description, DATE_FORMAT(event_date, '%Y-%m-%d') AS eventDate FROM photo_albums WHERE id = ? AND deleted_at IS NULL", [number]);
+      const albums = await pool.query("SELECT id, title, description, cover_photo_id AS coverPhotoId, DATE_FORMAT(event_date, '%Y-%m-%d') AS eventDate FROM photo_albums WHERE id = ? AND deleted_at IS NULL", [number]);
       if (!albums.length) return null;
       const photos = await pool.query(`${photoSelect} WHERE a.album_id = ? AND a.status = 'published' ORDER BY a.sequence_number`, [number]);
       return { ...albums[0], photos };
@@ -165,13 +165,21 @@ export function photoStoreMethods(pool, transact, audit, writeAudit) {
         return albumId || 0;
       }, true);
     },
-    async editPhotoAlbum(user, albumId, name, eventDate, description) {
+    async editPhotoAlbum(user, albumId, name, eventDate, description, coverPhotoId) {
       const uuid = actor(user), number = id(albumId), label = title(name), day = date(eventDate), desc = note(description);
+      const coverId = coverPhotoId ? id(coverPhotoId) : null;
       return transact(async (conn) => {
-        const rows = await conn.query('SELECT id FROM photo_albums WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [number]);
+        const rows = await conn.query('SELECT id, cover_photo_id AS coverPhotoId FROM photo_albums WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [number]);
         if (!rows.length) return false;
-        await conn.query('UPDATE photo_albums SET title = ?, event_date = ?, description = ?, updated_at = UTC_TIMESTAMP(6) WHERE id = ?', [label, day, desc, number]);
+        if (coverId) {
+          const covers = await conn.query("SELECT id FROM photo_assets WHERE id = ? AND album_id = ? AND status = 'published' FOR UPDATE", [coverId, number]);
+          if (!covers.length) throw new Error('Titelbild gehört nicht zu diesem Album.');
+        }
+        await conn.query('UPDATE photo_albums SET title = ?, event_date = ?, description = ?, cover_photo_id = ?, updated_at = UTC_TIMESTAMP(6) WHERE id = ?', [label, day, desc, coverId, number]);
         await audit(conn, uuid, 'photo_album.edit', 'photo_album', number, label);
+        if (coverId !== (rows[0].coverPhotoId ? Number(rows[0].coverPhotoId) : null)) {
+          await audit(conn, uuid, coverId ? 'photo.cover_select' : 'photo_album.cover_reset', coverId ? 'photo' : 'photo_album', coverId || number, label);
+        }
         return true;
       }, true);
     },

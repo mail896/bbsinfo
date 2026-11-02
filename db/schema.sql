@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS photo_albums (
   title VARCHAR(200) NOT NULL,
   event_date DATE NULL,
   description VARCHAR(1000) NOT NULL DEFAULT '',
+  cover_photo_id INT UNSIGNED NULL,
   created_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
   updated_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
@@ -259,6 +260,9 @@ CREATE TABLE IF NOT EXISTS photo_comment_revisions (
   CONSTRAINT photo_comment_revision_comment FOREIGN KEY (comment_id) REFERENCES photo_comments(id) ON DELETE RESTRICT,
   INDEX photo_comment_revision_order (comment_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE photo_albums
+  ADD CONSTRAINT photo_album_cover_photo FOREIGN KEY (cover_photo_id) REFERENCES photo_assets(id) ON DELETE RESTRICT;
 
 ALTER TABLE editor_images
   ADD CONSTRAINT editor_image_source_photo FOREIGN KEY (source_photo_id) REFERENCES photo_assets(id) ON DELETE RESTRICT;

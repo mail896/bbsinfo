@@ -28,7 +28,7 @@ const patterns = {
   original: /^\/bbsinfo\/photos\/([1-9][0-9]*)\/original$/,
   history: /^\/bbsinfo\/photos\/comments\/([1-9][0-9]*)\/history$/,
 };
-export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cmsStore, photoRoot, editorImageRoot, send, redirect, readForm, sameToken, origin }) {
+export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cmsStore, photoRoot, editorImageRoot, submissionsAvailable = true, send, redirect, readForm, sameToken, origin }) {
   const method = req.method;
   const get = method === 'GET' || method === 'HEAD';
   const store = cmsStore;
@@ -42,11 +42,11 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
       const query = url.searchParams.get('q') || '';
       if (query.length > 100 || /[\u0000-\u001f\u007f]/u.test(query)) return bad(send);
       if (method === 'GET') await store.recordAudit(identity.uuid, query ? 'photo_album.search' : 'page.view', query ? 'photo_album' : 'page', query ? null : 'photos');
-      return send(200, photoIndexPage(await store.listPhotoAlbums(query), query, identity.editor));
+      return send(200, photoIndexPage(await store.listPhotoAlbums(query), query));
     }
     if (path === `${base}photos/mine`) {
       if (method === 'GET') await store.recordAudit(identity.uuid, 'page.view', 'page', 'photos.mine');
-      return send(200, photoMinePage(await store.listOwnPhotoSets(identity.uuid), csrf));
+      return send(200, photoMinePage(await store.listOwnPhotoSets(identity.uuid), csrf, submissionsAvailable));
     }
     if (path === `${base}photos/review`) {
       if (!identity.editor) return forbidden(send);
@@ -157,7 +157,7 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
     }
     if (path === `${base}photos/albums/edit`) {
       if (!identity.editor) return forbidden(send);
-      if (!(await store.editPhotoAlbum(identity.uuid, form.get('id'), form.get('title'), form.get('eventDate'), form.get('description')))) return missing(send);
+      if (!(await store.editPhotoAlbum(identity.uuid, form.get('id'), form.get('title'), form.get('eventDate'), form.get('description'), form.get('coverPhotoId')))) return missing(send);
       return redirect(`${base}photos/albums/${form.get('id')}`, 'Album geändert.');
     }
     if (path === `${base}photos/albums/delete`) {

@@ -441,7 +441,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             return send(403, landing('Dieses IServ-Konto ist nicht für BBS Info freigeschaltet.'));
           }
           feedbackSession = session;
-          if (photoRoute) return await handlePhotoRoute({ req, res, path, url, identity, csrf: session.csrf, cmsStore, photoRoot, editorImageRoot, send, redirect, readForm, sameToken, origin });
+          if (photoRoute) return await handlePhotoRoute({ req, res, path, url, identity, csrf: session.csrf, cmsStore, photoRoot, editorImageRoot, submissionsAvailable: !!submissionsAvailable, send, redirect, readForm, sameToken, origin });
           if (path === base) {
             const highlights = cmsStore ? await cmsStore.homeHighlights() : { updates: [], issues: [] };
             if (cmsStore && req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'home');
@@ -483,7 +483,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
           }
           if (path === `${base}contributions/`) {
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'contributions');
-            return send(200, contributionsPage(await cmsStore.listOwnContributions(identity.uuid), session.csrf, !!submissionsAvailable));
+            return send(200, contributionsPage(await cmsStore.listOwnContributions(identity.uuid), session.csrf, !!submissionsAvailable, !!photosAvailable));
           }
           if (updateDetailMatch) {
             const update = await cmsStore.getPublishedUpdate(updateDetailMatch[1]);
@@ -563,7 +563,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             const trash = await cmsStore.listTrash(identity.uuid, identity.editor, trashPageNumber);
             if (trashPageNumber > 1 && ![trash.updates, trash.issues, trash.contributions, trash.submissions].some((rows) => rows.length)) return send(404, page('Seite nicht gefunden', '<section><h1>Seite nicht gefunden</h1></section>'));
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'trash');
-            return send(200, trashPage(trash, session.csrf, identity.editor));
+            return send(200, trashPage(trash, session.csrf, identity.editor, !!photosAvailable));
           }
           if (path === `${base}editor/digest/`) {
             if (!identity.editor) return denyProtectedAccess(identity, 'editor');
@@ -611,7 +611,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
           if (path === `${base}submissions/`) {
             const [own, all] = await Promise.all([cmsStore.listOwnSubmissions(identity.uuid), identity.editor ? cmsStore.listAllSubmissions() : Promise.resolve([])]);
             if (req.method === 'GET') await cmsStore.recordAudit(identity.uuid, 'page.view', 'page', 'submissions');
-            return send(200, submissionsPage(own, all, session.csrf, identity.editor, !!cmsStore));
+            return send(200, submissionsPage(own, all, session.csrf, identity.editor, !!cmsStore, !!photosAvailable));
           }
           if (submissionFileMatch || trashFileMatch || mediaMatch || mediaInlineMatch || mediaPageMatch) {
             const ownFile = !!submissionFileMatch;

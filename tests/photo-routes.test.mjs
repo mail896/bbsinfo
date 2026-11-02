@@ -39,3 +39,17 @@ test('Album-Besuch wird einmal auditiert', async () => {
   assert.deepEqual(album.result.audits, [[uuid, 'photo_album.visit', 'photo_album', 7, 'Schulfest']]);
   assert.match(album.result.html, /Schulfest/);
 });
+
+test('nur Redaktion kann ein Albumtitelbild speichern; die Auswahl erreicht die geprüfte Store-Methode', async () => {
+  const denied = fixture('/bbsinfo/photos/albums/edit', 'POST');
+  await handlePhotoRoute(denied.options);
+  assert.equal(denied.result.status, 403);
+  const editor = fixture('/bbsinfo/photos/albums/edit', 'POST', { uuid, editor: true, auditOwner: false });
+  let saved;
+  editor.options.cmsStore.editPhotoAlbum = async (...args) => { saved = args; return true; };
+  editor.options.readForm = async () => new URLSearchParams({ csrf: 'valid', id: '7', title: 'Schulfest', eventDate: '', description: '', coverPhotoId: '12' });
+  editor.options.redirect = (path) => { editor.result.status = 303; editor.result.path = path; };
+  await handlePhotoRoute(editor.options);
+  assert.deepEqual(saved, [uuid, '7', 'Schulfest', '', '', '12']);
+  assert.equal(editor.result.path, '/bbsinfo/photos/albums/7');
+});
