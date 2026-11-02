@@ -53,7 +53,7 @@ export async function receivePhoto(req, root, minFreeBytes = 10 * 1024 * 1024 * 
   const space = statfsSync(root);
   if (Number(space.bavail) * Number(space.bsize) < minFreeBytes + maxBytes) throw new Error('Foto-Speicher derzeit voll.');
   if (!req.headers['content-type']?.startsWith('multipart/form-data;') || Number(req.headers['content-length'] || 0) > maxBytes + 10000) throw new Error('Ungültiger Foto-Upload.');
-  const parser = busboy({ headers: req.headers, limits: { files: 1, fields: 0, fileSize: maxBytes, parts: 2, headerPairs: 20 } });
+  const parser = busboy({ headers: req.headers, defParamCharset: 'utf8', limits: { files: 1, fields: 0, fileSize: maxBytes, parts: 2, headerPairs: 20 } });
   const name = randomUUID();
   const path = photoPath(root, name);
   let originalName = '', size = 0, prefix = Buffer.alloc(0), seen = false, invalid = false, fileDone = Promise.resolve();

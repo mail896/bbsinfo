@@ -85,7 +85,7 @@ test('Aktuelles und Albumereignis werden nach zwei IDM-Prüfungen gemeinsam vers
   assert.doesNotMatch(notice.body, /lea@/);
 });
 
-test('Freigegebene Vorschau validiert den Browsercache erst nach erneuter Zugriffsprüfung', async () => {
+test('Freigegebene Vorschau ist einen Tag privat gecacht und validiert danach den Zugriff', async () => {
   const root = await mkdtemp(join(tmpdir(), 'bbsinfo-preview-cache-'));
   try {
     await writeFile(join(root, `${stored}.webp`), Buffer.from('preview'));
@@ -102,7 +102,7 @@ test('Freigegebene Vorschau validiert den Browsercache erst nach erneuter Zugrif
     });
     assert.equal(accessChecks, 1);
     assert.equal(res.status, 304);
-    assert.equal(headers['Cache-Control'], 'private, no-cache');
+    assert.equal(headers['Cache-Control'], 'private, max-age=86400');
     assert.equal(headers.Vary, 'Cookie');
     assert.equal(headers.ETag, etag);
   } finally { await rm(root, { recursive: true, force: true }); }

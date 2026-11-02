@@ -36,7 +36,7 @@ export async function handlePhotoRoute({ req, res, path, url, identity, csrf, cm
   const store = cmsStore;
   const sendFile = (file, contentType, disposition = null, etag = null) => {
     if (etag) {
-      res.setHeader('Cache-Control', 'private, no-cache');
+      res.setHeader('Cache-Control', 'private, max-age=86400');
       res.setHeader('Vary', 'Cookie');
       res.setHeader('ETag', etag);
       if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }

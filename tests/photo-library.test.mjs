@@ -23,12 +23,13 @@ test('Fotooriginal bleibt unverändert, Vorschau enthält keine Metadaten und un
     assert.equal(generated.status, 0);
     const original = await readFile(imagePath);
     const boundary = 'bbsinfo-photo-test-boundary';
-    const prefix = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="IMG_1.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`);
+    const prefix = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="IR-Bild Bahnhof Göttingen.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`);
     const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
     const body = Buffer.concat([prefix, original, suffix]);
     const request = Readable.from([body]);
     request.headers = { 'content-type': `multipart/form-data; boundary=${boundary}`, 'content-length': String(body.length) };
     const uploaded = await receivePhoto(request, root, 0);
+    assert.equal(uploaded.originalName, 'IR-Bild Bahnhof Göttingen.jpg');
     assert.equal(uploaded.mediaType, 'image/jpeg');
     assert.equal(uploaded.capturedDate, '2026-10-28');
     assert.equal(uploaded.sha256, createHash('sha256').update(original).digest('hex'));
@@ -64,6 +65,10 @@ test('ZIP ordnet Originale stabil und nennt Herkunft; Albumausgabe escaped Namen
     assert.match(result.manifest, /'=SUM\(1,2\)\.jpg/);
     const album = { id: 1, title: '<img src=x>', description: '', eventDate: null, photos: [{ id: 2, uploaderName: '<script>', sequenceNumber: 1 }] };
     assert.doesNotMatch(photoAlbumPage(album, 'csrf', false), /<img src=x>/);
+    const gallery = photoAlbumPage({ ...album, photos: Array.from({ length: 7 }, (_, index) => ({ id: index + 1, status: 'published', sequenceNumber: index + 1 })) }, 'csrf', false);
+    assert.equal((gallery.match(/loading="eager"/g) || []).length, 6);
+    assert.equal((gallery.match(/loading="lazy"/g) || []).length, 1);
+    assert.equal((gallery.match(/fetchpriority="high"/g) || []).length, 1);
     const photo = { id: 2, albumId: 1, sequenceNumber: 1, uploaderName: '<script>', capturedDate: null, originalName: 'test.jpg' };
     const readerDetail = photoDetailPage(photo, album, [], 'csrf', { uuid, editor: false });
     assert.doesNotMatch(readerDetail, /<script>/);
@@ -138,6 +143,7 @@ test('Fotolibrary bietet Jahre und Albumseiten; globale Suche verlinkt nur freig
   assert.match(html, /Ohne Datum/);
   assert.match(html, /q=Rohbau&amp;year=2006&amp;page=3/);
   assert.match(html, /Rohbau &amp; Umbau/);
+  assert.match(html, /loading="eager" fetchpriority="high"/);
   const results = searchPage('Rohbau', { updates: [], issues: [], albums: [row] }, []);
   assert.match(results, /Fotoalben/);
   assert.match(results, /href="\/bbsinfo\/photos\/albums\/4"/);
