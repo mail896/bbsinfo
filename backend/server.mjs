@@ -3,7 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { provider } from './auth.mjs';
-import { identityFromInfo, validateSettings, verifiedUuidFromInfo } from './access.mjs';
+import { identityFromInfo, validateSettings, verifiedDisplayNameFromInfo, verifiedUuidFromInfo } from './access.mjs';
 import { openArchiveStore } from './archive-store.mjs';
 import { openCmsStore, normalizeAuditFilters } from './cms-store.mjs';
 import { createAuditGapMarker } from './audit-gap-marker.mjs';
@@ -126,9 +126,9 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
     if (identity && !identity.editor && cmsStore?.hasEditorGrant) identity.editor = await cmsStore.hasEditorGrant(identity, verifyPendingEditor);
     return identity;
   }
-  async function auditAuthFailure(category, actor = null) {
+  async function auditAuthFailure(category, actor = null, name = null) {
     if (!cmsStore?.recordAuthFailure) return;
-    try { await cmsStore.recordAuthFailure(category, actor); }
+    try { await cmsStore.recordAuthFailure(category, actor, name); }
     catch { process.stderr.write('BBS Info: Anmeldefehler konnte nicht protokolliert werden.\n'); }
   }
   async function readAuditHealth() {
@@ -253,7 +253,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
   notificationTimer.unref();
   if (cmsStore?.expiredPhotoFiles && photoRoot) setImmediate(() => { void prunePhotoFiles(cmsStore, photoRoot).catch(() => process.stderr.write('BBS Info: Fotobereinigung beim Start fehlgeschlagen.\n')); });
   const retentionTimer = setInterval(() => {
-    if (cmsStore?.pruneSearchEvents) void cmsStore.pruneSearchEvents().catch(() => process.stderr.write('BBS Info: Suchdatenbereinigung fehlgeschlagen.\n'));
+    if (cmsStore?.prunePersonalStatsData) void cmsStore.prunePersonalStatsData().catch(() => process.stderr.write('BBS Info: Statistikdatenbereinigung fehlgeschlagen.\n'));
     if (cmsStore?.pruneTrash && submissionRoot) void cmsStore.pruneTrash(async (name) => {
       try { await removeSubmissionFile(submissionRoot, name); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -352,7 +352,7 @@ export function createApp({ settings, getProvider, archiveStore = null, cmsStore
             const claim = verifiedUuidFromInfo(result.info);
             const validUuid = claim !== null;
             process.stderr.write(`BBS Info OIDC-Zugriff abgelehnt: uuid_gueltig=${validUuid} gruppe_liste=${Array.isArray(result.info?.['iserv:groups'])} gruppen_anzahl=${Array.isArray(result.info?.['iserv:groups']) ? result.info['iserv:groups'].length : 0} userinfo_gruppen=${result.groupSources?.userInfo || 'unknown'} idtoken_gruppen=${result.groupSources?.idToken || 'unknown'} admin_uuid=${validUuid && claim.toLowerCase() === config.auditOwnerUuid} redaktion_uuid=${validUuid && config.editorUuids.includes(claim.toLowerCase())}.\n`);
-            await auditAuthFailure('auth.identity_denied', claim);
+            await auditAuthFailure('auth.identity_denied', claim, claim ? verifiedDisplayNameFromInfo(result.info) : null);
             return send(403, landing(deniedLoginMessage));
           }
           if (!Number.isFinite(result.expires) || result.expires <= now() || (sessions.size >= 1000 && !sessions.has(c[sessionCookie]))) {

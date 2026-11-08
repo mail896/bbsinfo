@@ -23,6 +23,8 @@ Diese Anleitung beschreibt die Bausteine für eine **eigene, isolierte Installat
 
 ## Upgrades
 
+Für ein Upgrade von 1.4.3 auf 1.4.4 die Datenbank privat sichern und die Rücksicherung prüfen. Danach `db/migrations/2026-11-08-denied-identity-stats.sql` einmalig anwenden, bevor der neue Code gestartet wird. Die zusätzliche Tabelle enthält nur verifizierte Namen abgewiesener Anmeldungen und benötigt für das Dienstkonto `SELECT, INSERT, UPDATE, DELETE`. Die App bereinigt diese Namen nach 90 Tagen.
+
 Bei einer bestehenden Installation von Version 1.1 vor dem Wechsel auf 1.2 eine private Vollsicherung samt Rücksicherungstest durchführen und `db/migrations/2026-11-02-photo-library.sql` einmalig anwenden. Das private Fotoverzeichnis muss dem Dienstkonto gehören und `0700` gesetzt sein. Abgelehnte Fotooriginale werden nach der Sichtung entfernt; veröffentlichte gelöschte Fotos bleiben sieben Tage verdeckt wiederherstellbar.
 
 Für ein Upgrade von 1.2.0 auf 1.2.1 die produktive Datenbank ebenfalls privat sichern und die Rücksicherung prüfen. Danach `db/migrations/2026-11-02-photo-album-cover.sql` einmalig anwenden, bevor der neue Code gestartet wird. Diese Migration ergänzt die auswählbare Titelbild-ID; vorhandene Alben behalten zunächst ihr bisheriges erstes veröffentlichtes Bild als Vorschau.

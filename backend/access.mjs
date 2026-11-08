@@ -48,9 +48,7 @@ export function identityFromInfo(info, settings) {
   const editorByUuid = settings.editorUuids.includes(uuid);
   if (!reader && !auditOwner && !editorByUuid) return null;
   const editor = auditOwner || editorByUuid || (account && settings.editorAccounts.includes(account)) || roles.some((role) => role && typeof role.uuid === 'string' && settings.editorRoleUuids.includes(role.uuid.toLowerCase()));
-  const fullName = typeof info.name === 'string' && info.name.trim().length <= 200 ? info.name.trim() : '';
-  const parts = [info.given_name, info.family_name].filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim());
-  const name = fullName || (parts.join(' ').length <= 200 ? parts.join(' ') : '') || account || 'Kollegiumsmitglied';
+  const name = verifiedDisplayNameFromInfo(info) || account || 'Kollegiumsmitglied';
   return {
     uuid, account,
     name,
@@ -58,6 +56,16 @@ export function identityFromInfo(info, settings) {
     editor: !!editor,
     auditOwner,
   };
+}
+
+export function verifiedDisplayNameFromInfo(info) {
+  if (!info || typeof info !== 'object') return null;
+  const clean = (value) => typeof value === 'string' && value.trim().length <= 200 && !/[\u0000-\u001f\u007f]/u.test(value) ? value.trim() : '';
+  const fullName = clean(info.name);
+  if (fullName) return fullName;
+  const parts = [clean(info.given_name), clean(info.family_name)].filter(Boolean);
+  const combined = parts.join(' ');
+  return combined && combined.length <= 200 ? combined : null;
 }
 
 export function verifiedUuidFromInfo(info) {

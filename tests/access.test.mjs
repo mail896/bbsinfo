@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { identityFromInfo, validateSettings } from '../backend/access.mjs';
+import { identityFromInfo, validateSettings, verifiedDisplayNameFromInfo } from '../backend/access.mjs';
 import { mergeVerifiedGroups } from '../backend/auth.mjs';
 
 const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -30,6 +30,9 @@ test('Marc allein erhält die Sonderberechtigung zur Auswertung', () => {
 test('IServ-Anzeigename wird für die namentliche Auswertung übernommen', () => {
   assert.equal(identityFromInfo(info(owner, { name: ' Marc Schulz ' }), settings).name, 'Marc Schulz');
   assert.equal(identityFromInfo(info(reader, { given_name: 'Melanie', family_name: 'Bierwirth' }), settings).name, 'Melanie Bierwirth');
+  assert.equal(verifiedDisplayNameFromInfo({ name: 'Schüler\nTest' }), null);
+  assert.equal(verifiedDisplayNameFromInfo({ given_name: ' Vorname ', family_name: ' Nachname ' }), 'Vorname Nachname');
+  assert.equal(verifiedDisplayNameFromInfo({ preferred_username: 's.test' }), null);
 });
 
 test('fehlende oder widersprüchliche IServ-UUID wird verworfen', () => {

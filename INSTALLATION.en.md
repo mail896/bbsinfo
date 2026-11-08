@@ -23,6 +23,8 @@ This guide describes the components for a **separate installation**; it is not a
 
 ## Upgrades
 
+For an upgrade from 1.4.3 to 1.4.4, make a private database backup and verify a restore. Apply `db/migrations/2026-11-08-denied-identity-stats.sql` once before starting the new code. The new table holds only verified names from denied sign-ins and requires `SELECT, INSERT, UPDATE, DELETE` for the service account. The app removes these names after 90 days.
+
 For an existing 1.0 installation, make and restore-test a private full backup before switching to 1.1, then apply `db/migrations/2026-10-29-content-trash.sql` once. Expired trash entries are purged on service start and daily; the private submissions directory must be configured.
 
 For an existing 1.1 installation, make and restore-test a private full backup before switching to 1.2, then apply `db/migrations/2026-11-02-photo-library.sql` once. The photo directory needs mode `0700` and service-account ownership. Rejected originals are removed after review; deleted published photos can be recovered by an operator for seven days.

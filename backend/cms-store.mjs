@@ -296,8 +296,8 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
   return {
     ...photoStoreMethods(pool, transact, audit, writeAudit),
     async ready() {
-      const rows = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('updates', 'update_subscriptions', 'audit_events', 'iserv_identities', 'editor_grants', 'issue_sequence', 'issues', 'issue_updates', 'submissions', 'update_submissions', 'issue_submissions', 'daily_usage', 'issue_mail_delivery', 'content_templates', 'editor_images', 'app_settings', 'contributions', 'issue_contributions', 'search_events', 'update_mail_delivery')");
-      if (Number(rows[0]?.n) !== 20) throw new Error('BBS-Info-Datenbankschema fehlt.');
+      const rows = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('updates', 'update_subscriptions', 'audit_events', 'iserv_identities', 'auth_denied_identities', 'editor_grants', 'issue_sequence', 'issues', 'issue_updates', 'submissions', 'update_submissions', 'issue_submissions', 'daily_usage', 'issue_mail_delivery', 'content_templates', 'editor_images', 'app_settings', 'contributions', 'issue_contributions', 'search_events', 'update_mail_delivery')");
+      if (Number(rows[0]?.n) !== 21) throw new Error('BBS-Info-Datenbankschema fehlt.');
       const fields = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'updates' AND column_name IN ('body_html', 'deleted_at', 'deleted_by', 'mail_suppressed')) OR (table_name = 'contributions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'submissions' AND column_name IN ('deleted_at', 'deleted_by')) OR (table_name = 'issues' AND column_name IN ('body_html', 'deleted_at', 'deleted_by')) OR (table_name = 'issue_updates' AND column_name = 'snapshot_body_html') OR (table_name = 'audit_events' AND column_name = 'object_title') OR (table_name = 'audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES') OR (table_name = 'iserv_identities' AND column_name = 'email') OR (table_name = 'update_subscriptions' AND column_name = 'mode'))");
       if (Number(fields[0]?.n) !== 16) throw new Error('BBS-Info-Datenbankspalten fehlen.');
       const photos = await pool.query("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('photo_albums', 'photo_sets', 'photo_assets', 'photo_comments', 'photo_comment_revisions', 'photo_album_notifications', 'photo_album_mail_delivery')");
@@ -305,6 +305,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const photoField = await pool.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'editor_images' AND column_name = 'source_photo_id') OR (table_name = 'update_subscriptions' AND column_name IN ('notify_updates', 'notify_albums', 'albums_since')))");
       if (Number(photoField[0]?.n) !== 4) throw new Error('BBS-Info-Datenbankspalten fehlen.');
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
+      await pool.query('DELETE FROM auth_denied_identities WHERE last_seen_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
     },
     async rememberIdentity(identity) {
       const uuid = validActor(identity?.uuid);
@@ -379,10 +380,14 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const actorUuid = validActor(actor);
       await transact((conn) => writeAudit(conn, actorUuid, action, type, id, title), true);
     },
-    async recordAuthFailure(category, actor = null) {
+    async recordAuthFailure(category, actor = null, name = null) {
       if (!AUTH_FAILURE_ACTIONS.has(category)) throw new Error('Ungültige Anmeldefehlerart.');
       const actorUuid = actor === null ? null : validActor(actor);
-      await transact((conn) => writeAudit(conn, actorUuid, category, 'auth', null, null), true);
+      if (name !== null && (category !== 'auth.identity_denied' || actorUuid === null || typeof name !== 'string' || !name.trim() || name.trim().length > 200 || /[\u0000-\u001f\u007f]/u.test(name))) throw new Error('Ungültiger IServ-Name.');
+      await transact(async (conn) => {
+        if (name !== null) await conn.query('INSERT INTO auth_denied_identities (user_uuid, display_name) VALUES (?, ?) ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), last_seen_at = UTC_TIMESTAMP(6)', [actorUuid, name.trim()]);
+        await writeAudit(conn, actorUuid, category, 'auth', null, null);
+      }, true);
     },
     async listIssueUpdates(options = {}) {
       return issueSourcePage(pool, 'updates', options);
@@ -657,8 +662,9 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       await pool.query('INSERT INTO search_events (actor_uuid, term, source) VALUES (?, ?, ?)', [uuid, clean, source]);
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
     },
-    async pruneSearchEvents() {
+    async prunePersonalStatsData() {
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
+      await pool.query('DELETE FROM auth_denied_identities WHERE last_seen_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
     },
     async listAudit(before = null, limit = 200, filters = {}) {
       if (before !== null && (typeof before !== 'string' || !/^[1-9][0-9]{0,19}$/.test(before))) throw new Error('Ungültiger Audit-Cursor.');
@@ -684,16 +690,18 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
     async listUsageStats(days = 30) {
       if (![7, 30, 90].includes(days)) throw new Error('Ungültiger Zeitraum.');
       await pool.query('DELETE FROM search_events WHERE searched_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
+      await pool.query('DELETE FROM auth_denied_identities WHERE last_seen_at < UTC_TIMESTAMP(6) - INTERVAL 90 DAY');
       const range = `day >= UTC_DATE() - INTERVAL ${days - 1} DAY`;
-      const [daily, topContent, activeUsers, subscriptions, searchTerms, searchPeople] = await Promise.all([
+      const [daily, topContent, activeUsers, subscriptions, searchTerms, searchPeople, deniedAccounts] = await Promise.all([
         pool.query(`SELECT DATE_FORMAT(day, '%d.%m.%Y') AS day, action, SUM(event_count) AS eventCount FROM daily_usage WHERE ${range} GROUP BY day, action ORDER BY day DESC, action LIMIT 3000`),
         pool.query(`SELECT action, object_type AS objectType, object_id AS objectId, SUM(event_count) AS eventCount FROM daily_usage WHERE ${range} AND action IN ('archive.pdf','issue.view','issue.pdf','update.view','submission.published_file','photo_album.visit','photo_album.zip','photo.original') GROUP BY action, object_type, object_id ORDER BY eventCount DESC LIMIT 10`),
-        pool.query(`SELECT COUNT(DISTINCT actor_uuid) AS count FROM audit_events WHERE occurred_at >= UTC_TIMESTAMP() - INTERVAL ${days} DAY`),
+        pool.query(`SELECT COUNT(DISTINCT actor_uuid) AS count FROM audit_events WHERE action = 'session.login' AND occurred_at >= UTC_TIMESTAMP() - INTERVAL ${days} DAY`),
         pool.query('SELECT COUNT(*) AS count FROM update_subscriptions WHERE enabled = 1'),
         pool.query(`SELECT term, COUNT(*) AS eventCount FROM search_events WHERE searched_at >= UTC_TIMESTAMP(6) - INTERVAL ${days} DAY GROUP BY term ORDER BY eventCount DESC, term LIMIT 20`),
         pool.query(`SELECT se.term, COALESCE(p.display_name, 'Unbekanntes Konto') AS person, COUNT(*) AS eventCount, DATE_FORMAT(MAX(se.searched_at), '%Y-%m-%d %H:%i:%s') AS lastAtUtc FROM search_events se LEFT JOIN iserv_identities p ON p.user_uuid = se.actor_uuid WHERE se.searched_at >= UTC_TIMESTAMP(6) - INTERVAL ${days} DAY GROUP BY se.term, se.actor_uuid, p.display_name ORDER BY eventCount DESC, lastAtUtc DESC LIMIT 50`),
+        pool.query(`SELECT d.display_name AS person, COUNT(*) AS eventCount, DATE_FORMAT(MAX(e.occurred_at), '%Y-%m-%d %H:%i:%s') AS lastAtUtc FROM audit_events e JOIN auth_denied_identities d ON d.user_uuid = e.actor_uuid AND e.occurred_at >= d.first_seen_at WHERE e.action = 'auth.identity_denied' AND e.occurred_at >= UTC_TIMESTAMP(6) - INTERVAL ${days} DAY GROUP BY e.actor_uuid, d.display_name ORDER BY lastAtUtc DESC LIMIT 100`),
       ]);
-      return { days, daily, topContent, searchTerms, searchPeople, activeUsers: Number(activeUsers[0]?.count || 0), subscriptions: Number(subscriptions[0]?.count || 0) };
+      return { days, daily, topContent, searchTerms, searchPeople, deniedAccounts, activeUsers: Number(activeUsers[0]?.count || 0), subscriptions: Number(subscriptions[0]?.count || 0) };
     },
     async searchPublished(query) {
       if (typeof query !== 'string' || query.trim().length < 2 || query.trim().length > 100) throw new Error('Ungültige Suche.');

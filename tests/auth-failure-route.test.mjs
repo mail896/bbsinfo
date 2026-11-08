@@ -31,7 +31,7 @@ async function withLogin(complete, work, recordAuthFailure = async () => {}) {
 test('verifizierte Schülergruppe erhält verständliche Ablehnung mit bekannter UUID im Audit', async () => {
   const recorded = [];
   await withLogin(
-    async () => ({ info: { 'iserv:uuid': student, uuid: student, 'iserv:groups': [{ name: 'Schüler' }] } }),
+    async () => ({ info: { 'iserv:uuid': student, uuid: student, name: 'Schülerin <Test>', 'iserv:groups': [{ name: 'Schüler' }] } }),
     async (endpoint, cookie) => {
       const response = await fetch(`${endpoint}/bbsinfo/oidc/callback?code=secret&state=s`, { headers: { cookie } });
       const html = await response.text();
@@ -42,13 +42,13 @@ test('verifizierte Schülergruppe erhält verständliche Ablehnung mit bekannter
     },
     async (...event) => recorded.push(event),
   );
-  assert.deepEqual(recorded, [['auth.identity_denied', student]]);
+  assert.deepEqual(recorded, [['auth.identity_denied', student, 'Schülerin <Test>']]);
 });
 
 test('widersprüchliche UUID-Claims werden als anonymer Fehler erfasst', async () => {
   const recorded = [];
   await withLogin(
-    async () => ({ info: { 'iserv:uuid': student, uuid: owner, 'iserv:groups': [{ name: 'Kollegium' }] } }),
+    async () => ({ info: { 'iserv:uuid': student, uuid: owner, name: 'Nicht speichern', 'iserv:groups': [{ name: 'Kollegium' }] } }),
     async (endpoint, cookie) => {
       const response = await fetch(`${endpoint}/bbsinfo/oidc/callback?code=ok&state=s`, { headers: { cookie } });
       assert.equal(response.status, 403);
@@ -56,7 +56,7 @@ test('widersprüchliche UUID-Claims werden als anonymer Fehler erfasst', async (
     },
     async (...event) => recorded.push(event),
   );
-  assert.deepEqual(recorded, [['auth.identity_denied', null]]);
+  assert.deepEqual(recorded, [['auth.identity_denied', null, null]]);
 });
 
 test('IServ access_denied wird ohne unbekannte Person protokolliert und verständlich angezeigt', async () => {
@@ -74,7 +74,7 @@ test('IServ access_denied wird ohne unbekannte Person protokolliert und verstän
     },
     async (...event) => recorded.push(event),
   );
-  assert.deepEqual(recorded, [['auth.access_denied', null]]);
+  assert.deepEqual(recorded, [['auth.access_denied', null, null]]);
 });
 
 test('IServ invalid_request erhält einen hilfreichen Hinweis ohne unbewiesene Schülerdiagnose', async () => {
@@ -93,7 +93,7 @@ test('IServ invalid_request erhält einen hilfreichen Hinweis ohne unbewiesene S
     },
     async (...event) => recorded.push(event),
   );
-  assert.deepEqual(recorded, [['auth.oidc_error', null]]);
+  assert.deepEqual(recorded, [['auth.oidc_error', null, null]]);
 });
 
 test('ungültiger Callback erzeugt keine frei auslösbaren Auditeinträge', async () => {

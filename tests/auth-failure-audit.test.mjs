@@ -27,14 +27,18 @@ test('abgewiesene IServ-Anmeldung wird ohne Details und mit optionaler geprüfte
   const store = createCmsStore(pool);
   await store.recordAuthFailure('auth.access_denied');
   await store.recordAuthFailure('auth.identity_denied', actor);
+  await store.recordAuthFailure('auth.identity_denied', actor, 'Schülerin Test');
 
-  assert.deepEqual(events, ['begin', 'commit', 'release', 'begin', 'commit', 'release']);
+  assert.deepEqual(events, ['begin', 'commit', 'release', 'begin', 'commit', 'release', 'begin', 'commit', 'release']);
+  assert.deepEqual(statements.filter(({ sql }) => sql.startsWith('INSERT INTO auth_denied_identities')).map(({ params }) => params), [[actor.toLowerCase(), 'Schülerin Test']]);
   assert.deepEqual(statements.filter(({ sql }) => sql.startsWith('INSERT INTO audit_events')).map(({ params }) => params), [
     [null, 'auth.access_denied', 'auth', null, null],
+    [actor.toLowerCase(), 'auth.identity_denied', 'auth', null, null],
     [actor.toLowerCase(), 'auth.identity_denied', 'auth', null, null],
   ]);
   assert.deepEqual(statements.filter(({ sql }) => sql.startsWith('INSERT INTO daily_usage')).map(({ params }) => params), [
     ['auth.access_denied', 'auth', ''],
+    ['auth.identity_denied', 'auth', ''],
     ['auth.identity_denied', 'auth', ''],
   ]);
 });
@@ -48,6 +52,9 @@ test('nur feste Anmeldefehlerarten und gültige IServ-UUIDs sind erlaubt', async
   const count = statements.length;
   await assert.rejects(store.recordAuthFailure('auth.access_denied?code=secret'));
   await assert.rejects(store.recordAuthFailure('auth.access_denied', 'not-a-uuid'));
+  await assert.rejects(store.recordAuthFailure('auth.access_denied', actor, 'Nicht erlaubt'));
+  await assert.rejects(store.recordAuthFailure('auth.identity_denied', null, 'Ohne UUID'));
+  await assert.rejects(store.recordAuthFailure('auth.identity_denied', actor, 'Zeilen\numbruch'));
   await assert.rejects(store.recordAudit(null, 'auth.access_denied', 'auth'));
   assert.equal(statements.length, count);
 });
@@ -62,7 +69,7 @@ test('Readiness verlangt die Migration für anonyme Audit-Ereignisse', async () 
   function readinessPool(nullable) {
     return {
       async query(sql) {
-        if (sql.includes('information_schema.tables')) return [{ n: sql.includes('photo_albums') ? 7 : 20 }];
+        if (sql.includes('information_schema.tables')) return [{ n: sql.includes('photo_albums') ? 7 : 21 }];
         if (sql.includes('information_schema.columns')) {
           if (sql.includes('source_photo_id')) return [{ n: 4 }];
           assert.match(sql, /audit_events' AND column_name = 'actor_uuid' AND is_nullable = 'YES'/);
@@ -80,4 +87,15 @@ test('Readiness verlangt die Migration für anonyme Audit-Ereignisse', async () 
   const schema = await readFile(new URL('../db/schema.sql', import.meta.url), 'utf8');
   assert.match(schema, /CREATE TABLE IF NOT EXISTS audit_events \([\s\S]*?actor_uuid CHAR\(36\) CHARACTER SET ascii COLLATE ascii_bin NULL,/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS search_events \([\s\S]*?actor_uuid CHAR\(36\) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,/);
+});
+
+test('Schema und Migration begrenzen den Namensspeicher abgewiesener Konten', async () => {
+  const migration = await readFile(new URL('../db/migrations/2026-11-08-denied-identity-stats.sql', import.meta.url), 'utf8');
+  const schema = await readFile(new URL('../db/schema.sql', import.meta.url), 'utf8');
+  for (const sql of [migration, schema]) {
+    assert.match(sql, /CREATE TABLE IF NOT EXISTS auth_denied_identities/);
+    assert.match(sql, /first_seen_at DATETIME\(6\)/);
+    assert.match(sql, /INDEX denied_identity_expiry \(last_seen_at\)/);
+  }
+  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON bbsinfo\.auth_denied_identities/);
 });

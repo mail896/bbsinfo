@@ -100,6 +100,14 @@ test('Suchstatistik nennt Personen ohne UUID und escaped Suchtext', () => {
   assert.doesNotMatch(html, /<Personalrat>|Lea <Test>/);
 });
 
+test('abgewiesene Anmeldungen erscheinen nur namentlich und escaped in der Admin-Statistik', () => {
+  const html = statsPage({ days: 30, daily: [{ day: '08.11.2026', action: 'auth.identity_denied', eventCount: 2 }, { day: '08.11.2026', action: 'auth.access_denied', eventCount: 1 }], topContent: [], activeUsers: 0, subscriptions: 0, deniedAccounts: [{ person: 'Schülerin <Test>', eventCount: 2, lastAtUtc: '2026-11-08 12:00:00' }] });
+  assert.match(html, /Schülerin &lt;Test&gt;/);
+  assert.match(html, /2 durch BBS Info abgewiesen/);
+  assert.match(html, /1 bereits von IServ abgewiesen/);
+  assert.doesNotMatch(html, /Schülerin <Test>/);
+});
+
 async function setup(archiveStore = null, cmsStore = null, accountInfo = validInfo, submissionRoot = null, mailConfig = null, sendIssue = undefined, refreshOverride = null, editorImageRoot = null, sendDigest = undefined, photoRoot = null) {
   let authorized = true;
   const calls = { begin: 0, complete: 0, refresh: 0 };
