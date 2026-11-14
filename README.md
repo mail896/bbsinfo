@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [Projektseite mit Demo-Screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.4.4** · 8. November 2026 · Idee und Konzeption: Marc Schulz
+**Version 1.4.5** · 14. November 2026 · Idee und Konzeption: Marc Schulz
 
 BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurze laufende Beiträge, nummerierte Ausgaben und ein historisches PDF-Archiv in einer geschützten Anwendung. Der Quellcode ist öffentlich; Beiträge, Steckbriefe, Fotos, Archiv-PDFs, Suchprotokolle und Zugangsdaten sind es nicht.
 
@@ -18,7 +18,7 @@ BBS Info bündelt schulinterne Neuigkeiten für das Kollegium. Es verbindet kurz
 - Suche in neuen Inhalten und freigegebenen Fotoalben sowie im geschützten, teilweise per OCR erschlossenen historischen PDF-Archiv.
 - „Mein BBS Info“ bündelt eigene Beiträge, Steckbriefe und Fotos sowie Einstellungen und Papierkorb. Dort ist die Darstellung für diesen Browser auf Hell, Dunkel oder System einstellbar. Benachrichtigungen für Aktuelles und freigegebene Fotoalben sind getrennt auswählbar, mit gemeinsamem Rhythmus sofort, täglich oder wöchentlich. Vor jedem Versand wird die aktuelle IServ-Gruppenzugehörigkeit geprüft.
 - Getrennte Ausgaben-Mail mit Vorschau, bearbeitbarer Vorlage und ausdrücklicher Freigabe für einen Verteiler.
-- „Settings“ steht für die Redaktion rechts im Hauptmenü. Dort sind redaktionelle Einstellungen als Tab erreichbar; Audit-Log, Nutzungsstatistik mit namentlich zugeordneten, abgewiesenen Anmeldungen, Suchauswertung, Filter und CSV-Export bleiben ausschließlich für die Administration sichtbar. Namen abgewiesener Konten werden nach 90 Tagen entfernt.
+- „Settings“ steht für die Redaktion rechts im Hauptmenü. Dort sind redaktionelle Einstellungen als Tab erreichbar; Audit-Log, Nutzungsstatistik mit namentlich zugeordneten, abgewiesenen Anmeldungen, Suchauswertung, Filter und CSV-Export bleiben ausschließlich für die Administration sichtbar. Verifizierte abgewiesene Konten erscheinen auch im Audit mit Namen und sind dort nach Namen suchbar; nach 90 Tagen werden ihre Namen nicht mehr angezeigt.
 - Einheitliche Oberfläche für Desktop und Mobilgeräte.
 
 ## Screenshots

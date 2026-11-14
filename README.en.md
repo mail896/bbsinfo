@@ -2,7 +2,7 @@
 
 [Deutsch](README.md) · [Project site and demo screenshots](https://mail896.github.io/bbsinfo/)
 
-**Version 1.4.4** · 8 November 2026 · Concept: Marc Schulz
+**Version 1.4.5** · 14 November 2026 · Concept: Marc Schulz
 
 BBS Info brings school news together for staff. It combines short updates, numbered issues and a searchable historical PDF archive in an access-controlled application. The source is public; articles, staff submissions, photos, archive PDFs, search logs and credentials are not.
 
@@ -18,7 +18,7 @@ BBS Info brings school news together for staff. It combines short updates, numbe
 - Search across current content, approved photo albums and the protected historical PDF archive, including OCR-derived text.
 - “My BBS Info” groups personal articles, profile sheets and photos with settings and trash. The appearance for this browser can be set to light, dark or system mode. Settings let staff opt in to updates and approved photo albums separately, with one immediate, daily or weekly cadence. Current IServ membership is checked before every message.
 - Separate issue email with preview, editable template and an explicit gate for the staff-wide address.
-- Editors open “Settings” from the right side of the main menu. Editorial settings appear there as a tab; audit log, usage statistics with named, verified denied sign-ins, search analysis, filters and CSV export remain administrator-only. Names of denied accounts are removed after 90 days.
+- Editors open “Settings” from the right side of the main menu. Editorial settings appear there as a tab; audit log, usage statistics with named, verified denied sign-ins, search analysis, filters and CSV export remain administrator-only. Verified denied accounts also appear by name in the audit log and can be found by name there; their names are no longer shown after 90 days.
 - A consistent desktop and mobile interface.
 
 ## Screenshots

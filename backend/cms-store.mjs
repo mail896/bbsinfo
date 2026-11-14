@@ -55,7 +55,7 @@ function auditFilterConditions(filters) {
   if (actor) {
     if (UUID.test(actor)) { clauses.push('e.actor_uuid = ?'); params.push(actor.toLowerCase()); }
     else {
-      clauses.push("(LOCATE(LOWER(?), LOWER(p.display_name)) > 0 OR (e.action IN ('update.mail_start', 'update.mail_sent', 'update.mail_uncertain', 'photo_album.mail_start', 'photo_album.mail_sent', 'photo_album.mail_uncertain', 'notification.mail_start', 'notification.mail_sent', 'notification.mail_uncertain') AND LOCATE(LOWER(?), 'bbs info') > 0))");
+      clauses.push("(LOCATE(LOWER(?), LOWER(COALESCE(p.display_name, denied.display_name))) > 0 OR (e.action IN ('update.mail_start', 'update.mail_sent', 'update.mail_uncertain', 'photo_album.mail_start', 'photo_album.mail_sent', 'photo_album.mail_uncertain', 'notification.mail_start', 'notification.mail_sent', 'notification.mail_uncertain') AND LOCATE(LOWER(?), 'bbs info') > 0))");
       params.push(actor, actor);
     }
   }
@@ -66,9 +66,10 @@ function auditFilterConditions(filters) {
   }
   if (fromUtc) { clauses.push('e.occurred_at >= ?'); params.push(fromUtc); }
   if (toUtc) { clauses.push('e.occurred_at < ?'); params.push(toUtc); }
-  return { clauses, params, countJoin: object ? `${auditUpdateJoin}${auditIssueJoin}` : '' };
+  return { clauses, params, countJoin: `${actor && !UUID.test(actor) ? auditDeniedJoin : ''}${object ? `${auditUpdateJoin}${auditIssueJoin}` : ''}` };
 }
 
+const auditDeniedJoin = " LEFT JOIN auth_denied_identities denied ON e.action = 'auth.identity_denied' AND denied.user_uuid = e.actor_uuid AND e.occurred_at >= denied.first_seen_at AND e.occurred_at >= UTC_TIMESTAMP(6) - INTERVAL 90 DAY AND denied.last_seen_at >= UTC_TIMESTAMP(6) - INTERVAL 90 DAY";
 const auditUpdateJoin = " LEFT JOIN updates u ON e.object_type = 'update' AND u.id = e.object_id";
 const auditIssueJoin = " LEFT JOIN issues draft_issue ON e.object_type = 'issue' AND e.action IN ('issue.create', 'issue.draft_delete', 'issue.draft_restore', 'issue.draft_purge') AND draft_issue.id = e.object_id LEFT JOIN issues published_issue ON e.object_type = 'issue' AND e.action NOT IN ('issue.create', 'issue.draft_delete', 'issue.draft_restore', 'issue.draft_purge') AND published_issue.number = e.object_id";
 
@@ -672,7 +673,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const { clauses, params } = auditFilterConditions(filters);
       if (before) { clauses.push('e.id < ?'); params.push(before); }
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-      return pool.query(`SELECT e.id, DATE_FORMAT(e.occurred_at, '%Y-%m-%d %H:%i:%s') AS occurredAt, e.actor_uuid AS actorUuid, p.display_name AS actorName, e.action, e.object_type AS objectType, e.object_id AS objectId, COALESCE(e.object_title, u.title, draft_issue.title, published_issue.title) AS objectTitle, im.stored_name AS imageName FROM audit_events e LEFT JOIN iserv_identities p ON p.user_uuid = e.actor_uuid${auditUpdateJoin}${auditIssueJoin} LEFT JOIN editor_images im ON e.object_type = 'image' AND im.id = e.object_id ${where} ORDER BY e.id DESC LIMIT ?`, [...params, limit]);
+      return pool.query(`SELECT e.id, DATE_FORMAT(e.occurred_at, '%Y-%m-%d %H:%i:%s') AS occurredAt, e.actor_uuid AS actorUuid, COALESCE(p.display_name, denied.display_name) AS actorName, e.action, e.object_type AS objectType, e.object_id AS objectId, COALESCE(e.object_title, u.title, draft_issue.title, published_issue.title) AS objectTitle, im.stored_name AS imageName FROM audit_events e LEFT JOIN iserv_identities p ON p.user_uuid = e.actor_uuid${auditDeniedJoin}${auditUpdateJoin}${auditIssueJoin} LEFT JOIN editor_images im ON e.object_type = 'image' AND im.id = e.object_id ${where} ORDER BY e.id DESC LIMIT ?`, [...params, limit]);
     },
     async listAuditPage(page = 1, filters = {}, through = null) {
       if (!Number.isSafeInteger(page) || page < 1 || page > 2000) throw new Error('Ungültige Audit-Seite.');
@@ -684,7 +685,7 @@ export function createCmsStore(pool, { auditGapMarker = null } = {}) {
       const snapshot = through || String(counts[0]?.newestId || '');
       const pageCount = Math.max(1, Math.min(2000, Math.ceil(Number(counts[0]?.count || 0) / 50)));
       if (!snapshot) return { events: [], hasMore: false, page, pageCount, through: '' };
-      const rows = await pool.query(`SELECT e.id, DATE_FORMAT(e.occurred_at, '%Y-%m-%d %H:%i:%s') AS occurredAt, e.actor_uuid AS actorUuid, p.display_name AS actorName, e.action, e.object_type AS objectType, e.object_id AS objectId, COALESCE(e.object_title, u.title, draft_issue.title, published_issue.title) AS objectTitle, im.stored_name AS imageName FROM audit_events e LEFT JOIN iserv_identities p ON p.user_uuid = e.actor_uuid${auditUpdateJoin}${auditIssueJoin} LEFT JOIN editor_images im ON e.object_type = 'image' AND im.id = e.object_id WHERE e.id <= ?${clauses.length ? ` AND ${clauses.join(' AND ')}` : ''} ORDER BY e.id DESC LIMIT ? OFFSET ?`, [snapshot, ...params, 51, (page - 1) * 50]);
+      const rows = await pool.query(`SELECT e.id, DATE_FORMAT(e.occurred_at, '%Y-%m-%d %H:%i:%s') AS occurredAt, e.actor_uuid AS actorUuid, COALESCE(p.display_name, denied.display_name) AS actorName, e.action, e.object_type AS objectType, e.object_id AS objectId, COALESCE(e.object_title, u.title, draft_issue.title, published_issue.title) AS objectTitle, im.stored_name AS imageName FROM audit_events e LEFT JOIN iserv_identities p ON p.user_uuid = e.actor_uuid${auditDeniedJoin}${auditUpdateJoin}${auditIssueJoin} LEFT JOIN editor_images im ON e.object_type = 'image' AND im.id = e.object_id WHERE e.id <= ?${clauses.length ? ` AND ${clauses.join(' AND ')}` : ''} ORDER BY e.id DESC LIMIT ? OFFSET ?`, [snapshot, ...params, 51, (page - 1) * 50]);
       return { events: rows.slice(0, 50), hasMore: rows.length > 50, page, pageCount, through: snapshot };
     },
     async listUsageStats(days = 30) {

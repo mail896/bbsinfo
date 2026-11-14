@@ -55,6 +55,34 @@ test('Objekt- und Datumsfilter gelten identisch für Audit-Seite und CSV und ble
   assert.equal(statements[2].params.at(-1), 1000);
 });
 
+test('Audit und CSV lösen Namen abgewiesener IServ-Konten nur im 90-Tage-Fenster auf', async () => {
+  const statements = [];
+  const store = createCmsStore({
+    async query(sql, params) {
+      statements.push({ sql, params });
+      if (sql.startsWith('SELECT COUNT(*) AS count, MAX(e.id)')) return [{ count: 1, newestId: 93 }];
+      return [];
+    },
+  });
+  await store.listAuditPage(1, { actor: 'Schülerin Test' });
+  await store.listAudit(null, 1000, { actor: 'Schülerin Test' });
+  assert.equal(statements.length, 3);
+  for (const { sql, params } of statements) {
+    assert.match(sql, /LEFT JOIN auth_denied_identities denied ON e\.action = 'auth\.identity_denied'/);
+    assert.match(sql, /e\.occurred_at >= denied\.first_seen_at/);
+    assert.match(sql, /e\.occurred_at >= UTC_TIMESTAMP\(6\) - INTERVAL 90 DAY/);
+    assert.match(sql, /denied\.last_seen_at >= UTC_TIMESTAMP\(6\) - INTERVAL 90 DAY/);
+    assert.match(sql, /LOWER\(COALESCE\(p\.display_name, denied\.display_name\)\)/);
+    assert.doesNotMatch(sql, /Schülerin Test/);
+    assert.equal(params.filter((value) => value === 'Schülerin Test').length, 2);
+  }
+  for (const { sql } of statements.slice(1)) assert.match(sql, /COALESCE\(p\.display_name, denied\.display_name\) AS actorName/);
+  statements.length = 0;
+  await store.listAuditPage(1);
+  assert.doesNotMatch(statements[0].sql, /auth_denied_identities/);
+  assert.match(statements[1].sql, /auth_denied_identities/);
+});
+
 test('Audit-Ansicht bewahrt alle Filter beim Blättern und beim CSV-Export', () => {
   const html = auditPage({ events: [], page: 2, pageCount: 3, through: '91' }, { actor: 'Marc', action: 'issue.edit', object: 'BBS Info 94', from: '2026-03-29', to: '2026-03-29' });
   assert.match(html, /name="object" value="BBS Info 94"/);
